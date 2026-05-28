@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uppsala Hallfördelare - Smart fördelning av träningstider</title>
+  
+  <!-- Typography & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- External Libraries (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="main-header">
+      <div class="header-logo">
+        <div class="logo-icon">
+          <i data-lucide="crown"></i>
+        </div>
+        <div class="logo-text">
+          <h1>Uppsala Hallfördelare</h1>
+          <span class="sub-title">System för rättvis resursallokering</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="mock-data-btn" class="btn btn-secondary">
+          <i data-lucide="sparkles"></i>
+          <span>Generera Testdata</span>
+        </button>
+        <button id="export-csv-btn" class="btn btn-secondary" disabled>
+          <i data-lucide="download"></i>
+          <span>Exportera CSV</span>
+        </button>
+        <button id="print-pdf-btn" class="btn btn-primary" disabled>
+          <i data-lucide="printer"></i>
+          <span>Skriv ut Rapport (PDF)</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Metrics Bar -->
+    <section class="metrics-container" aria-label="Nyckeltal">
+      <div class="metric-card">
+        <div class="metric-icon blue">
+          <i data-lucide="users"></i>
+        </div>
+        <div class="metric-content">
+          <span class="metric-label">Aktiva Föreningar</span>
+          <span id="metric-total-clubs" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon gold">
+          <i data-lucide="user-check"></i>
+        </div>
+        <div class="metric-content">
+          <span class="metric-label">Totalt Antal Medlemmar</span>
+          <span id="metric-total-members" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon green">
+          <i data-lucide="clock"></i>
+        </div>
+        <div class="metric-content">
+          <span class="metric-label">Tillgängliga Halltimmar / vecka</span>
+          <span id="metric-total-hours" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon purple">
+          <i data-lucide="percent"></i>
+        </div>
+        <div class="metric-content">
+          <span class="metric-label">Fördelningsgrad (Timmar/Medlem)</span>
+          <span id="metric-allocation-rate" class="metric-value">0.000</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Dashboard Grid -->
+    <main class="dashboard-grid">
+      <!-- Left Column: Configurations -->
+      <aside class="sidebar-col">
+        <!-- Uppsala Hall Configurator -->
+        <section class="card config-card" aria-labelledby="hall-config-title">
+          <div class="card-header">
+            <i data-lucide="warehouse"></i>
+            <h2 id="hall-config-title">Uppsala Idrottshallar</h2>
+          </div>
+          <div class="card-body">
+            <p class="section-desc">Aktivera/inaktivera sporthallar och anpassa deras tillgängliga bokningstimmar per vecka.</p>
+            <div id="halls-list-container" class="halls-list">
+              <!-- Dynamically populated via JS -->
+            </div>
+            
+            <div class="add-hall-form">
+              <input type="text" id="new-hall-name" placeholder="Ny hall (t.ex. Gottsunda B)" class="form-input">
+              <input type="number" id="new-hall-hours" placeholder="Timmar" class="form-input hour-input" min="1" max="168">
+              <button id="add-hall-btn" class="btn btn-icon btn-secondary" title="Lägg till hall">
+                <i data-lucide="plus"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Allocation Settings -->
+        <section class="card settings-card" aria-labelledby="settings-title">
+          <div class="card-header">
+            <i data-lucide="sliders"></i>
+            <h2 id="settings-title">Fördelningsinställningar</h2>
+          </div>
+          <div class="card-body">
+            <div class="algorithm-selector">
+              <label class="algo-option">
+                <input type="radio" name="allocation-algo" value="pure-proportional" checked>
+                <span class="radio-custom"></span>
+                <span class="algo-info">
+                  <span class="algo-name">Rent proportionell</span>
+                  <span class="algo-desc">Timmar fördelas linjärt utifrån föreningens medlemsandel.</span>
+                </span>
+              </label>
+
+              <label class="algo-option">
+                <input type="radio" name="allocation-algo" value="base-proportional">
+                <span class="radio-custom"></span>
+                <span class="algo-info">
+                  <span class="algo-name">Bas + Proportionell</span>
+                  <span class="algo-desc">Varje förening garanteras en bas, resten fördelas proportionellt.</span>
+                </span>
+              </label>
+              
+              <!-- Conditional config for Base + Proportional -->
+              <div id="base-config-panel" class="algo-subpanel hidden">
+                <label for="base-hours-input" class="subpanel-label">Garanterade bas-timmar per förening:</label>
+                <div class="input-with-suffix">
+                  <input type="number" id="base-hours-input" value="2" min="1" max="10" step="0.5" class="form-input">
+                  <span class="suffix">timmar/vecka</span>
+                </div>
+              </div>
+
+              <label class="algo-option">
+                <input type="radio" name="allocation-algo" value="tiered">
+                <span class="radio-custom"></span>
+                <span class="algo-info">
+                  <span class="algo-name">Medlemskategorier (Nivåer)</span>
+                  <span class="algo-desc">Timmar tilldelas stegvis baserat på fasta medlemsspann.</span>
+                </span>
+              </label>
+              
+              <!-- Conditional config for Tiered -->
+              <div id="tiered-config-panel" class="algo-subpanel hidden">
+                <span class="subpanel-label">Kategoridefinitioner:</span>
+                <div id="tiers-list-container" class="tiers-list">
+                  <!-- Dynamically populated via JS -->
+                </div>
+                <button id="add-tier-btn" class="btn btn-secondary btn-sm mt-2">
+                  <i data-lucide="plus"></i> Lägg till nivå
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Right Column: Workspace, Mapping & Results -->
+      <section class="main-col">
+        <!-- File Dropzone -->
+        <div id="dropzone" class="dropzone">
+          <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden-file-input">
+          <div class="dropzone-content">
+            <i data-lucide="upload-cloud" class="dropzone-icon"></i>
+            <h3>Dra och släpp medlemslista</h3>
+            <p>Stöder Excel (.xlsx, .xls) och CSV-filer</p>
+            <span class="btn btn-secondary select-file-btn">Välj fil från datorn</span>
+          </div>
+        </div>
+
+        <!-- Column Mapper Panel (Hidden initially) -->
+        <div id="mapper-panel" class="card mapper-card hidden">
+          <div class="card-header">
+            <i data-lucide="binary"></i>
+            <h2>Kolumnmappning</h2>
+          </div>
+          <div class="card-body">
+            <p class="section-desc">Vi hittade flera kolumner i din fil. Vänligen välj hur data ska tolkas:</p>
+            
+            <div class="mapper-format-toggle">
+              <label class="toggle-option">
+                <input type="radio" name="data-format" value="raw-list" checked>
+                <span class="radio-custom"></span>
+                <span><strong>A: Medlemslista</strong> (Varje rad representerar en medlem)</span>
+              </label>
+              <label class="toggle-option">
+                <input type="radio" name="data-format" value="summary-list">
+                <span class="radio-custom"></span>
+                <span><strong>B: Föreningssammanställning</strong> (Varje rad innehåller föreningens totala medlemsantal)</span>
+              </label>
+            </div>
+
+            <div class="mapper-selectors">
+              <div class="control-group">
+                <label for="map-club-col" class="form-label">Kolumn för Föreningsnamn:</label>
+                <select id="map-club-col" class="form-select"></select>
+              </div>
+              <div id="mapper-member-count-group" class="control-group hidden">
+                <label for="map-members-col" class="form-label">Kolumn för Medlemsantal:</label>
+                <select id="map-members-col" class="form-select"></select>
+              </div>
+            </div>
+
+            <div class="mapper-actions">
+              <button id="cancel-mapping-btn" class="btn btn-secondary">Avbryt</button>
+              <button id="apply-mapping-btn" class="btn btn-primary">Fördela timmar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active File Alert / Indicator -->
+        <div id="active-file-indicator" class="active-file-indicator hidden">
+          <div class="file-info">
+            <i data-lucide="file-spreadsheet"></i>
+            <span id="active-file-name" class="file-name">medlemslista.xlsx</span>
+            <span id="active-file-size" class="file-size">(14.2 KB)</span>
+          </div>
+          <button id="remove-file-btn" class="btn btn-icon btn-danger-link" title="Ta bort fil och återställ">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <!-- Results & Analysis Tabs Container -->
+        <div id="results-container" class="results-container hidden">
+          <!-- Tab Navigation -->
+          <nav class="tabs-nav" aria-label="Resultatvyer">
+            <button class="tab-btn active" data-tab="tab-table">
+              <i data-lucide="table"></i>
+              <span>Fördelningstabell</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-charts">
+              <i data-lucide="bar-chart-3"></i>
+              <span>Visualisering</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-utilization">
+              <i data-lucide="pie-chart"></i>
+              <span>Hallutnyttjande</span>
+            </button>
+          </nav>
+
+          <!-- Tab Content: Table -->
+          <div id="tab-table" class="tab-content active">
+            <div class="table-actions">
+              <div class="search-box">
+                <i data-lucide="search"></i>
+                <input type="text" id="table-search" placeholder="Sök förening..." class="form-input">
+              </div>
+              <div id="unallocated-hours-alert" class="unallocated-badge hidden">
+                <i data-lucide="info"></i>
+                <span id="unallocated-hours-text">0.0 timmar är ej allokerade (buffert)</span>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table id="allocation-table" class="premium-table">
+                <thead>
+                  <tr>
+                    <th>Förening</th>
+                    <th class="text-right">Medlemsantal</th>
+                    <th class="text-right">Andel Medlemmar</th>
+                    <th class="text-right table-col-base hidden">Bas-timmar</th>
+                    <th class="text-right table-col-prop hidden">Prop. timmar</th>
+                    <th class="text-right">Tilldelad tid (h/vecka)</th>
+                  </tr>
+                </thead>
+                <tbody id="allocation-table-body">
+                  <!-- JS generated rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab Content: Charts -->
+          <div id="tab-charts" class="tab-content">
+            <div class="charts-grid">
+              <div class="chart-container-card">
+                <h3>Fördelning av timmar per förening</h3>
+                <div class="canvas-wrapper">
+                  <canvas id="hours-bar-chart"></canvas>
+                </div>
+              </div>
+              <div class="chart-container-card">
+                <h3>Medlemsstorlek vs Bokade timmar</h3>
+                <div class="canvas-wrapper">
+                  <canvas id="ratio-scatter-chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Content: Utilization -->
+          <div id="tab-utilization" class="tab-content">
+            <div class="utilization-grid">
+              <div class="util-card">
+                <h3>Hallbeläggningsstatistik</h3>
+                <p class="section-desc">Hur stor andel av de tillgängliga timmarna som tilldelas föreningar totalt.</p>
+                <div class="total-utilization-meter">
+                  <div class="meter-circle">
+                    <svg class="progress-ring" width="160" height="160">
+                      <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="12" fill="transparent" r="70" cx="80" cy="80"/>
+                      <circle id="utilization-progress" class="progress-ring__circle" stroke="#10b981" stroke-width="12" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round" fill="transparent" r="70" cx="80" cy="80"/>
+                    </svg>
+                    <div class="meter-text">
+                      <span id="utilization-percentage" class="meter-number">0%</span>
+                      <span class="meter-label">Allokerat</span>
+                    </div>
+                  </div>
+                  <div class="meter-legend">
+                    <div class="legend-item">
+                      <span class="legend-dot green"></span>
+                      <span>Tilldelade timmar: <strong id="util-allocated-hours">0h</strong></span>
+                    </div>
+                    <div class="legend-item">
+                      <span class="legend-dot gray"></span>
+                      <span>Lediga/Buffert timmar: <strong id="util-free-hours">0h</strong></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="util-card list-card">
+                <h3>Sporthallarnas andel av allokering</h3>
+                <p class="section-desc">Lista över bidragande timmar från respektive sporthall.</p>
+                <div id="halls-util-list" class="halls-util-list">
+                  <!-- Populated via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+  </script>
+</body>
+</html>
