@@ -32,10 +32,12 @@ const appState = {
     { label: 'Stor', limit: Infinity, hours: 10 }
   ],
   associations: [],       // Combined list of associations aggregated from active files
-  files: [],              // Active uploaded participant files: { id, name, size, records: [], multiplier, ageGroup }
+  files: [],              // Active uploaded participant files: { id, name, size, records: [], multiplier, ageGroup, type }
   activeAlgo: 'pure-proportional',
   lastAllocatedData: [],
-  hallsFile: null         // Uploaded halls file: { name, size }
+  hallsFile: null,         // Uploaded halls file: { name, size }
+  ageMultipliers: { m5_9: 1, m10_15: 2, m16_20: 3 },
+  dataType: 'detailed'     // 'simple' | 'detailed' | 'age-template'
 };
 
 // Raw file details during import
@@ -148,20 +150,35 @@ function initEventListeners() {
     }
   });
 
-  // Format Toggle inside Mapper panel (Toggles detailed columns inputs)
+  // Format Toggle inside Mapper panel (Toggles detailed / age columns inputs)
   const formatRadios = document.getElementsByName('data-format');
   formatRadios.forEach(radio => {
     radio.addEventListener('change', (e) => {
       const detailedCols = document.querySelectorAll('.map-detailed-only');
+      const ageCols = document.querySelectorAll('.map-age-template-only');
       const totalLabel = document.getElementById('map-total-label');
       
       if (e.target.value === 'summary-list') {
         detailedCols.forEach(el => el.classList.add('hidden'));
+        ageCols.forEach(el => el.classList.add('hidden'));
         totalLabel.textContent = "Kolumn för Medlemsantal (Krävs):";
-      } else {
+      } else if (e.target.value === 'age-template') {
+        detailedCols.forEach(el => el.classList.add('hidden'));
+        ageCols.forEach(el => el.classList.remove('hidden'));
+        totalLabel.textContent = "Totalt antal deltagare (Valfri):";
+      } else { // detailed-list
         detailedCols.forEach(el => el.classList.remove('hidden'));
+        ageCols.forEach(el => el.classList.add('hidden'));
         totalLabel.textContent = "Totalt antal deltagare (Krävs):";
       }
+    });
+  });
+
+  // Age multipliers inputs event
+  const multiplierInputs = document.querySelectorAll('.multiplier-val-input');
+  multiplierInputs.forEach(input => {
+    input.addEventListener('input', () => {
+      runAggregation();
     });
   });
 
@@ -598,6 +615,9 @@ function showColumnMapper(headers) {
     boys: document.getElementById('map-boys-col'),
     girlsDis: document.getElementById('map-girls-dis-col'),
     boysDis: document.getElementById('map-boys-dis-col'),
+    c5_9: document.getElementById('map-5-9-col'),
+    c10_15: document.getElementById('map-10-15-col'),
+    c16_20: document.getElementById('map-16-20-col'),
     total: document.getElementById('map-total-col')
   };
   
@@ -606,10 +626,10 @@ function showColumnMapper(headers) {
     sel.innerHTML = '';
     
     // Add optional tag to optional selectors
-    if (sel.id === 'map-activity-col' || sel.id === 'map-girls-col' || sel.id === 'map-boys-col' || sel.id === 'map-girls-dis-col' || sel.id === 'map-boys-dis-col') {
+    if (sel.id === 'map-activity-col' || sel.id === 'map-girls-col' || sel.id === 'map-boys-col' || sel.id === 'map-girls-dis-col' || sel.id === 'map-boys-dis-col' || sel.id === 'map-total-col') {
       const opt = document.createElement('option');
       opt.value = '-1';
-      opt.textContent = '-- Ej angiven (Valfri) --';
+      opt.textContent = sel.id === 'map-total-col' ? '-- Ej angiven (Beräkna automatiskt) --' : '-- Ej angiven (Valfri) --';
       sel.appendChild(opt);
     }
     
@@ -623,12 +643,13 @@ function showColumnMapper(headers) {
   
   // Autodetection of columns
   let autoClub = -1, autoAct = -1, autoGirls = -1, autoBoys = -1, autoGirlsDis = -1, autoBoysDis = -1, autoTotal = -1;
+  let auto5_9 = -1, auto10_15 = -1, auto16_20 = -1;
   
   headers.forEach((h, index) => {
     const lh = h.toLowerCase();
     
     // Club Name
-    if (autoClub === -1 && ['förening', 'forening', 'klubb', 'organisation', 'association', 'club', 'team'].some(kw => lh.includes(kw))) {
+    if (autoClub === -1 && ['förening', 'forening', 'klubb', 'organisation', 'association', 'club', 'team', 'org'].some(kw => lh.includes(kw))) {
       autoClub = index;
     }
     // Activity
@@ -651,6 +672,18 @@ function showColumnMapper(headers) {
     if (autoBoysDis === -1 && ['funktionsnedsättning pojkar', 'funk pojkar', 'funktionsnedsatta pojkar', 'disabilities boys'].some(kw => lh.includes(kw) || (lh.includes('funktionsneds') && lh.includes('pojk')))) {
       autoBoysDis = index;
     }
+    // 5-9 år
+    if (auto5_9 === -1 && (lh.includes('5-9') || lh.includes('5 till 9') || lh.includes('5 - 9'))) {
+      auto5_9 = index;
+    }
+    // 10-15 år
+    if (auto10_15 === -1 && (lh.includes('10-15') || lh.includes('10 till 15') || lh.includes('10 - 15'))) {
+      auto10_15 = index;
+    }
+    // 16-20 år
+    if (auto16_20 === -1 && (lh.includes('16-20') || lh.includes('16 till 20') || lh.includes('16 - 20'))) {
+      auto16_20 = index;
+    }
     // Total Participants
     if (autoTotal === -1 && ['totalt deltagare', 'deltagare totalt', 'antal deltagare', 'total deltagare', 'totalt antal deltagare', 'medlemmar', 'medlemsantal', 'totalt', 'total'].some(kw => lh.includes(kw))) {
       autoTotal = index;
@@ -664,21 +697,37 @@ function showColumnMapper(headers) {
   if (autoBoys !== -1) selects.boys.value = autoBoys;
   if (autoGirlsDis !== -1) selects.girlsDis.value = autoGirlsDis;
   if (autoBoysDis !== -1) selects.boysDis.value = autoBoysDis;
+  if (auto5_9 !== -1) selects.c5_9.value = auto5_9;
+  if (auto10_15 !== -1) selects.c10_15.value = auto10_15;
+  if (auto16_20 !== -1) selects.c16_20.value = auto16_20;
   if (autoTotal !== -1) selects.total.value = autoTotal;
   
   // Format Selection Toggle
   const formatRadios = document.getElementsByName('data-format');
   const detailedCols = document.querySelectorAll('.map-detailed-only');
+  const ageCols = document.querySelectorAll('.map-age-template-only');
   const totalLabel = document.getElementById('map-total-label');
   
-  // If we have detailed columns (like girls/boys), choose detailed format
-  if (autoGirls !== -1 || autoBoys !== -1) {
-    formatRadios[0].checked = true; // detailed
+  if (auto5_9 !== -1 || auto10_15 !== -1 || auto16_20 !== -1) {
+    formatRadios.forEach(radio => {
+      if (radio.value === 'age-template') radio.checked = true;
+    });
+    detailedCols.forEach(el => el.classList.add('hidden'));
+    ageCols.forEach(el => el.classList.remove('hidden'));
+    totalLabel.textContent = "Totalt antal deltagare (Valfri):";
+  } else if (autoGirls !== -1 || autoBoys !== -1) {
+    formatRadios.forEach(radio => {
+      if (radio.value === 'detailed-list') radio.checked = true;
+    });
     detailedCols.forEach(el => el.classList.remove('hidden'));
+    ageCols.forEach(el => el.classList.add('hidden'));
     totalLabel.textContent = "Totalt antal deltagare (Krävs):";
   } else {
-    formatRadios[1].checked = true; // summary
+    formatRadios.forEach(radio => {
+      if (radio.value === 'summary-list') radio.checked = true;
+    });
     detailedCols.forEach(el => el.classList.add('hidden'));
+    ageCols.forEach(el => el.classList.add('hidden'));
     totalLabel.textContent = "Kolumn för Medlemsantal (Krävs):";
   }
   
@@ -698,6 +747,33 @@ function handleApplyMapping() {
   const girlsDisIdx = parseInt(document.getElementById('map-girls-dis-col').value);
   const boysDisIdx = parseInt(document.getElementById('map-boys-dis-col').value);
   const totalIdx = parseInt(document.getElementById('map-total-col').value);
+  const c5_9Idx = parseInt(document.getElementById('map-5-9-col').value);
+  const c10_15Idx = parseInt(document.getElementById('map-10-15-col').value);
+  const c16_20Idx = parseInt(document.getElementById('map-16-20-col').value);
+  
+  if (format === 'age-template') {
+    if (isNaN(c5_9Idx) || c5_9Idx === -1 || isNaN(c10_15Idx) || c10_15Idx === -1 || isNaN(c16_20Idx) || c16_20Idx === -1) {
+      alert("Vänligen välj kolumner för alla tre åldersgrupper.");
+      return;
+    }
+  } else {
+    if (isNaN(clubIdx) || clubIdx === -1) {
+      alert("Vänligen välj kolumn för Förening.");
+      return;
+    }
+    if (isNaN(totalIdx) || totalIdx === -1) {
+      alert("Vänligen välj kolumn för Medlemsantal.");
+      return;
+    }
+  }
+
+  const parseVal = (v) => {
+    if (v === undefined || v === null || v === "") return 0;
+    if (typeof v === 'number') return Math.round(v);
+    const clean = String(v).replace(/[\s\xa0]/g, '').replace(',', '.');
+    const parsed = parseInt(clean, 10);
+    return isNaN(parsed) ? 0 : parsed;
+  };
   
   let records = [];
   
@@ -705,34 +781,34 @@ function handleApplyMapping() {
     const club = String(row[clubIdx] || '').trim();
     if (!club) return;
     
-    let total = parseInt(row[totalIdx]);
-    if (isNaN(total) || total < 0) total = 0;
+    let total = 0;
+    if (totalIdx !== -1) {
+      total = parseVal(row[totalIdx]);
+    }
     
     let activity = 'N/A';
     let girls = 0;
     let boys = 0;
     let girlsDis = 0;
     let boysDis = 0;
+    let c5_9 = 0;
+    let c10_15 = 0;
+    let c16_20 = 0;
     
-    if (format === 'detailed-list') {
+    if (format === 'age-template') {
+      c5_9 = parseVal(row[c5_9Idx]);
+      c10_15 = parseVal(row[c10_15Idx]);
+      c16_20 = parseVal(row[c16_20Idx]);
+      if (total === 0) {
+        total = c5_9 + c10_15 + c16_20;
+      }
+    } else if (format === 'detailed-list') {
       if (actIdx !== -1) activity = String(row[actIdx] || '').trim();
       
-      if (girlsIdx !== -1) {
-        girls = parseInt(row[girlsIdx]);
-        if (isNaN(girls) || girls < 0) girls = 0;
-      }
-      if (boysIdx !== -1) {
-        boys = parseInt(row[boysIdx]);
-        if (isNaN(boys) || boys < 0) boys = 0;
-      }
-      if (girlsDisIdx !== -1) {
-        girlsDis = parseInt(row[girlsDisIdx]);
-        if (isNaN(girlsDis) || girlsDis < 0) girlsDis = 0;
-      }
-      if (boysDisIdx !== -1) {
-        boysDis = parseInt(row[boysDisIdx]);
-        if (isNaN(boysDis) || boysDis < 0) boysDis = 0;
-      }
+      if (girlsIdx !== -1) girls = parseVal(row[girlsIdx]);
+      if (boysIdx !== -1) boys = parseVal(row[boysIdx]);
+      if (girlsDisIdx !== -1) girlsDis = parseVal(row[girlsDisIdx]);
+      if (boysDisIdx !== -1) boysDis = parseVal(row[boysDisIdx]);
       
       // If total is missing, calculate as girls + boys
       if (total === 0 && (girls > 0 || boys > 0)) {
@@ -747,7 +823,10 @@ function handleApplyMapping() {
       boys: boys,
       girlsDisability: girlsDis,
       boysDisability: boysDis,
-      total: total
+      total: total,
+      c5_9: c5_9,
+      c10_15: c10_15,
+      c16_20: c16_20
     });
   });
   
@@ -756,10 +835,18 @@ function handleApplyMapping() {
     return;
   }
   
+  if (format === 'age-template') {
+    appState.dataType = 'age-template';
+  } else if (format === 'detailed-list') {
+    appState.dataType = 'detailed';
+  } else {
+    appState.dataType = 'simple';
+  }
+
   // Add this file to data sources list
   const fileId = 'file-' + Date.now();
   
-  // Set default multiplier based on filename (e.g. if name contains *3 or 13-16, etc.)
+  // Set default multiplier based on filename
   let autoMultiplier = 2;
   const fname = currentFileData.name.toLowerCase();
   if (fname.includes('multiplier 3') || fname.includes('multiplikator 3') || fname.includes('13-16') || fname.includes('13 - 16')) {
@@ -782,13 +869,14 @@ function handleApplyMapping() {
     size: currentFileData.size,
     records: records,
     multiplier: autoMultiplier,
-    ageGroup: ageLabel
+    ageGroup: ageLabel,
+    type: appState.dataType
   });
   
   // Rebuild aggregated list & update
   aggregateAndAllocate();
   
-  // Hide mapper, restore dropzone (so users can upload more files!)
+  // Hide mapper, restore dropzone
   document.getElementById('mapper-panel').classList.add('hidden');
   document.getElementById('dropzone').classList.remove('hidden');
 }
@@ -865,8 +953,20 @@ function aggregateAndAllocate() {
 function runAggregation() {
   let aggregatedMap = {};
   
+  // Get active multipliers from the sidebar controls
+  const m5_9Input = document.getElementById('mult-5-9');
+  const m10_15Input = document.getElementById('mult-10-15');
+  const m16_20Input = document.getElementById('mult-16-20');
+  
+  const m5_9 = m5_9Input ? (parseFloat(m5_9Input.value) || 1) : 1;
+  const m10_15 = m10_15Input ? (parseFloat(m10_15Input.value) || 2) : 2;
+  const m16_20 = m16_20Input ? (parseFloat(m16_20Input.value) || 3) : 3;
+  
+  appState.ageMultipliers = { m5_9, m10_15, m16_20 };
+  
   appState.files.forEach(file => {
     const mult = file.multiplier;
+    const isAgeTemplate = file.type === 'age-template' || appState.dataType === 'age-template';
     
     file.records.forEach(rec => {
       const name = rec.club;
@@ -881,7 +981,10 @@ function runAggregation() {
           girlsDisability: 0,
           boysDisability: 0,
           participants: 0,
-          points: 0
+          points: 0,
+          c5_9: 0,
+          c10_15: 0,
+          c16_20: 0
         };
       }
       
@@ -890,12 +993,21 @@ function runAggregation() {
         assoc.activities.add(rec.activity);
       }
       
-      assoc.girls += rec.girls;
-      assoc.boys += rec.boys;
-      assoc.girlsDisability += rec.girlsDisability;
-      assoc.boysDisability += rec.boysDisability;
-      assoc.participants += rec.total;
-      assoc.points += rec.total * mult;
+      assoc.girls += rec.girls || 0;
+      assoc.boys += rec.boys || 0;
+      assoc.girlsDisability += rec.girlsDisability || 0;
+      assoc.boysDisability += rec.boysDisability || 0;
+      
+      if (isAgeTemplate) {
+        assoc.c5_9 += rec.c5_9 || 0;
+        assoc.c10_15 += rec.c10_15 || 0;
+        assoc.c16_20 += rec.c16_20 || 0;
+        assoc.participants += rec.total;
+        assoc.points += (rec.c5_9 || 0) * m5_9 + (rec.c10_15 || 0) * m10_15 + (rec.c16_20 || 0) * m16_20;
+      } else {
+        assoc.participants += rec.total;
+        assoc.points += rec.total * mult;
+      }
     });
   });
   
@@ -925,47 +1037,102 @@ function handleLoadMockData() {
   // Clear previous files
   appState.files = [];
   
-  // 1. Mock File A: 7-12 years (multiplier 2)
-  const fileA_records = [
-    { club: 'Uppsala Basket', activity: 'Basket', girls: 210, boys: 200, girlsDisability: 4, boysDisability: 6, total: 410 },
-    { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 150, boys: 170, girlsDisability: 2, boysDisability: 3, total: 320 },
-    { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 110, boys: 90, girlsDisability: 0, boysDisability: 1, total: 200 },
-    { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 350, girlsDisability: 5, boysDisability: 8, total: 600 },
-    { club: 'Vaksala SK', activity: 'Fotboll', girls: 220, boys: 260, girlsDisability: 3, boysDisability: 2, total: 480 },
-    { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 340, boys: 310, girlsDisability: 8, boysDisability: 6, total: 650 },
-    { club: 'Storvreta IBK', activity: 'Innebandy', girls: 160, boys: 220, girlsDisability: 1, boysDisability: 4, total: 380 },
-    { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 450, boys: 100, girlsDisability: 6, boysDisability: 2, total: 550 }
-  ];
+  const formatRadio = document.querySelector('input[name="data-format"]:checked');
+  const format = formatRadio ? formatRadio.value : 'detailed-list';
   
-  appState.files.push({
-    id: 'mock-file-1',
-    name: 'summering unika deltagare 2025 (7-12 år).xlsx',
-    size: '14.2 KB',
-    records: fileA_records,
-    multiplier: 2,
-    ageGroup: '7-12 år'
-  });
-  
-  // 2. Mock File B: 13-16 years (multiplier 3)
-  const fileB_records = [
-    { club: 'Uppsala Basket', activity: 'Basket', girls: 220, boys: 220, girlsDisability: 3, boysDisability: 2, total: 440 },
-    { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 130, boys: 170, girlsDisability: 1, boysDisability: 2, total: 300 },
-    { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 120, boys: 110, girlsDisability: 2, boysDisability: 1, total: 230 },
-    { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 400, girlsDisability: 3, boysDisability: 6, total: 650 },
-    { club: 'Vaksala SK', activity: 'Fotboll', girls: 210, boys: 260, girlsDisability: 1, boysDisability: 1, total: 470 },
-    { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 380, boys: 370, girlsDisability: 7, boysDisability: 5, total: 750 },
-    { club: 'Storvreta IBK', activity: 'Innebandy', girls: 180, boys: 240, girlsDisability: 2, boysDisability: 2, total: 420 },
-    { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 480, boys: 70, girlsDisability: 4, boysDisability: 1, total: 550 }
-  ];
-  
-  appState.files.push({
-    id: 'mock-file-2',
-    name: 'summering unika deltagare 2025 (13-16 år).xlsx',
-    size: '15.6 KB',
-    records: fileB_records,
-    multiplier: 3,
-    ageGroup: '13-16 år'
-  });
+  if (format === 'age-template') {
+    appState.dataType = 'age-template';
+    
+    const mockAgeRecords = [
+      { club: 'Uppsala Basket', c5_9: 210, c10_15: 220, c16_20: 80, total: 510 },
+      { club: 'FBC Uppsala (Innebandy)', c5_9: 150, c10_15: 170, c16_20: 60, total: 380 },
+      { club: 'Uppsala Handbollsklubb', c5_9: 110, c10_15: 120, c16_20: 40, total: 270 },
+      { club: 'IK Sirius', c5_9: 250, c10_15: 350, c16_20: 120, total: 720 },
+      { club: 'Vaksala SK', c5_9: 220, c10_15: 260, c16_20: 90, total: 570 },
+      { club: 'Uppsala Simsällskap', c5_9: 340, c10_15: 380, c16_20: 150, total: 870 },
+      { club: 'Storvreta IBK', c5_9: 160, c10_15: 220, c16_20: 70, total: 450 },
+      { club: 'Uppsala Gymnastikförening', c5_9: 450, c10_15: 480, c16_20: 110, total: 1040 }
+    ];
+    
+    appState.files.push({
+      id: 'mock-file-v5',
+      name: 'fordelningsmall_v5_mock.xlsx',
+      size: '18.5 KB',
+      records: mockAgeRecords,
+      multiplier: 1,
+      ageGroup: 'Blandade åldrar',
+      type: 'age-template'
+    });
+  } else if (format === 'summary-list') {
+    appState.dataType = 'simple';
+    
+    const mockSimpleRecords = [
+      { club: 'Uppsala Basket', total: 510 },
+      { club: 'FBC Uppsala (Innebandy)', total: 380 },
+      { club: 'Uppsala Handbollsklubb', total: 270 },
+      { club: 'IK Sirius', total: 720 },
+      { club: 'Vaksala SK', total: 570 },
+      { club: 'Uppsala Simsällskap', total: 870 },
+      { club: 'Storvreta IBK', total: 450 },
+      { club: 'Uppsala Gymnastikförening', total: 1040 }
+    ];
+    
+    appState.files.push({
+      id: 'mock-file-simple',
+      name: 'medlemsantal_enkel_mock.xlsx',
+      size: '12.1 KB',
+      records: mockSimpleRecords,
+      multiplier: 1,
+      ageGroup: 'Totalt',
+      type: 'simple'
+    });
+  } else {
+    appState.dataType = 'detailed';
+    
+    // 1. Mock File A: 7-12 years (multiplier 2)
+    const fileA_records = [
+      { club: 'Uppsala Basket', activity: 'Basket', girls: 210, boys: 200, girlsDisability: 4, boysDisability: 6, total: 410 },
+      { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 150, boys: 170, girlsDisability: 2, boysDisability: 3, total: 320 },
+      { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 110, boys: 90, girlsDisability: 0, boysDisability: 1, total: 200 },
+      { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 350, girlsDisability: 5, boysDisability: 8, total: 600 },
+      { club: 'Vaksala SK', activity: 'Fotboll', girls: 220, boys: 260, girlsDisability: 3, boysDisability: 2, total: 480 },
+      { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 340, boys: 310, girlsDisability: 8, boysDisability: 6, total: 650 },
+      { club: 'Storvreta IBK', activity: 'Innebandy', girls: 160, boys: 220, girlsDisability: 1, boysDisability: 4, total: 380 },
+      { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 450, boys: 100, girlsDisability: 6, boysDisability: 2, total: 550 }
+    ];
+    
+    appState.files.push({
+      id: 'mock-file-1',
+      name: 'summering unika deltagare 2025 (7-12 år).xlsx',
+      size: '14.2 KB',
+      records: fileA_records,
+      multiplier: 2,
+      ageGroup: '7-12 år',
+      type: 'detailed'
+    });
+    
+    // 2. Mock File B: 13-16 years (multiplier 3)
+    const fileB_records = [
+      { club: 'Uppsala Basket', activity: 'Basket', girls: 220, boys: 220, girlsDisability: 3, boysDisability: 2, total: 440 },
+      { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 130, boys: 170, girlsDisability: 1, boysDisability: 2, total: 300 },
+      { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 120, boys: 110, girlsDisability: 2, boysDisability: 1, total: 230 },
+      { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 400, girlsDisability: 3, boysDisability: 6, total: 650 },
+      { club: 'Vaksala SK', activity: 'Fotboll', girls: 210, boys: 260, girlsDisability: 1, boysDisability: 1, total: 470 },
+      { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 380, boys: 370, girlsDisability: 7, boysDisability: 5, total: 750 },
+      { club: 'Storvreta IBK', activity: 'Innebandy', girls: 180, boys: 240, girlsDisability: 2, boysDisability: 2, total: 420 },
+      { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 480, boys: 70, girlsDisability: 4, boysDisability: 1, total: 550 }
+    ];
+    
+    appState.files.push({
+      id: 'mock-file-2',
+      name: 'summering unika deltagare 2025 (13-16 år).xlsx',
+      size: '15.6 KB',
+      records: fileB_records,
+      multiplier: 3,
+      ageGroup: '13-16 år',
+      type: 'detailed'
+    });
+  }
   
   aggregateAndAllocate();
 }
@@ -1175,53 +1342,118 @@ function hideBaseHoursWarning() {
 function renderTable(allocatedData) {
   const tableBody = document.getElementById('allocation-table-body');
   const searchVal = document.getElementById('table-search').value.toLowerCase();
+  const showBasePropCols = appState.activeAlgo === 'base-proportional';
+  const totalPoints = allocatedData.reduce((sum, item) => sum + item.points, 0);
   
-  // Toggle columns inside the table header
-  const colBases = document.querySelectorAll('.table-col-base');
-  const colProps = document.querySelectorAll('.table-col-prop');
+  const basePropHeaders = showBasePropCols ? `
+    <th class="text-right">Bas-timmar</th>
+    <th class="text-right">Prop-timmar</th>
+  ` : '';
   
-  if (appState.activeAlgo === 'base-proportional') {
-    colBases.forEach(el => el.classList.remove('hidden'));
-    colProps.forEach(el => el.classList.remove('hidden'));
-  } else {
-    colBases.forEach(el => el.classList.add('hidden'));
-    colProps.forEach(el => el.classList.add('hidden'));
+  let headerHtml = '';
+  if (appState.dataType === 'age-template') {
+    headerHtml = `
+      <tr>
+        <th>Förening</th>
+        <th class="text-right">5-9 år</th>
+        <th class="text-right">10-15 år</th>
+        <th class="text-right">16-20 år</th>
+        <th class="text-right">Poäng</th>
+        <th class="text-right">Andel %</th>
+        ${basePropHeaders}
+        <th class="text-right">Tilldelad tid</th>
+      </tr>
+    `;
+  } else if (appState.dataType === 'detailed') {
+    headerHtml = `
+      <tr>
+        <th>Förening</th>
+        <th>Aktiviteter</th>
+        <th class="text-right">Flickor</th>
+        <th class="text-right">Pojkar</th>
+        <th class="text-right">Flickor (funk)</th>
+        <th class="text-right">Pojkar (funk)</th>
+        <th class="text-right">Deltagare</th>
+        <th class="text-right">Poäng</th>
+        <th class="text-right">Andel %</th>
+        ${basePropHeaders}
+        <th class="text-right">Tilldelad tid</th>
+      </tr>
+    `;
+  } else { // 'simple'
+    headerHtml = `
+      <tr>
+        <th>Förening</th>
+        <th class="text-right">Medlemsantal</th>
+        <th class="text-right">Poäng</th>
+        <th class="text-right">Andel %</th>
+        ${basePropHeaders}
+        <th class="text-right">Tilldelad tid</th>
+      </tr>
+    `;
   }
+  document.getElementById('allocation-table-head').innerHTML = headerHtml;
   
   tableBody.innerHTML = '';
   
   if (allocatedData.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="11" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga föreningar inlagda</td></tr>`;
+    const colSpan = showBasePropCols ? 13 : 11;
+    tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga föreningar inlagda</td></tr>`;
     return;
   }
   
   const filtered = allocatedData.filter(item => item.name.toLowerCase().includes(searchVal));
   
   if (filtered.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="11" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga matchande föreningar hittades</td></tr>`;
+    const colSpan = showBasePropCols ? 13 : 11;
+    tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga matchande föreningar hittades</td></tr>`;
     return;
   }
   
   filtered.forEach(item => {
     const row = document.createElement('tr');
+    const sharePct = totalPoints > 0 ? ((item.points / totalPoints) * 100).toFixed(2) + '%' : '0.00%';
+    const baseHoursCell = showBasePropCols ? `<td class="text-right">${item.baseHours.toFixed(1)}h</td>` : '';
+    const propHoursCell = showBasePropCols ? `<td class="text-right">${item.propHours.toFixed(1)}h</td>` : '';
     
-    const sharePct = (item.share * 100).toFixed(1) + '%';
-    const baseHoursCell = appState.activeAlgo === 'base-proportional' ? `<td class="text-right table-col-base">${item.baseHours.toFixed(1)}h</td>` : '';
-    const propHoursCell = appState.activeAlgo === 'base-proportional' ? `<td class="text-right table-col-prop">${item.propHours.toFixed(1)}h</td>` : '';
-    
-    row.innerHTML = `
-      <td style="font-weight: 600;">${item.name}</td>
-      <td style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.activities}">${item.activities}</td>
-      <td class="text-right">${(item.girls || 0).toLocaleString('sv-SE')}</td>
-      <td class="text-right">${(item.boys || 0).toLocaleString('sv-SE')}</td>
-      <td class="text-right">${(item.girlsDisability || 0).toLocaleString('sv-SE')}</td>
-      <td class="text-right">${(item.boysDisability || 0).toLocaleString('sv-SE')}</td>
-      <td class="text-right" style="font-weight: 500;">${item.participants.toLocaleString('sv-SE')}</td>
-      <td class="text-right" style="font-weight: 600; color: #cbd5e1;">${parseFloat(item.points.toFixed(1)).toLocaleString('sv-SE')}</td>
-      ${baseHoursCell}
-      ${propHoursCell}
-      <td class="text-right" style="font-weight: 700; color: var(--brand-gold);">${item.totalHours.toFixed(1)}h</td>
-    `;
+    if (appState.dataType === 'age-template') {
+      row.innerHTML = `
+        <td style="font-weight: 600;">${item.name}</td>
+        <td class="text-right">${(item.c5_9 || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${(item.c10_15 || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${(item.c16_20 || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right" style="font-weight: 600; color: #cbd5e1;">${parseFloat(item.points.toFixed(1)).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${sharePct}</td>
+        ${baseHoursCell}
+        ${propHoursCell}
+        <td class="text-right" style="font-weight: 700; color: var(--brand-gold);">${item.totalHours.toFixed(1)}h</td>
+      `;
+    } else if (appState.dataType === 'detailed') {
+      row.innerHTML = `
+        <td style="font-weight: 600;">${item.name}</td>
+        <td style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.activities}">${item.activities}</td>
+        <td class="text-right">${(item.girls || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${(item.boys || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${(item.girlsDisability || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${(item.boysDisability || 0).toLocaleString('sv-SE')}</td>
+        <td class="text-right" style="font-weight: 500;">${item.participants.toLocaleString('sv-SE')}</td>
+        <td class="text-right" style="font-weight: 600; color: #cbd5e1;">${parseFloat(item.points.toFixed(1)).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${sharePct}</td>
+        ${baseHoursCell}
+        ${propHoursCell}
+        <td class="text-right" style="font-weight: 700; color: var(--brand-gold);">${item.totalHours.toFixed(1)}h</td>
+      `;
+    } else { // 'simple'
+      row.innerHTML = `
+        <td style="font-weight: 600;">${item.name}</td>
+        <td class="text-right">${item.participants.toLocaleString('sv-SE')}</td>
+        <td class="text-right" style="font-weight: 600; color: #cbd5e1;">${parseFloat(item.points.toFixed(1)).toLocaleString('sv-SE')}</td>
+        <td class="text-right">${sharePct}</td>
+        ${baseHoursCell}
+        ${propHoursCell}
+        <td class="text-right" style="font-weight: 700; color: var(--brand-gold);">${item.totalHours.toFixed(1)}h</td>
+      `;
+    }
     tableBody.appendChild(row);
   });
 }
@@ -1442,33 +1674,70 @@ function exportExcel(allocatedData) {
   // ----------------------------------------------------
   // Flik 1: Hallfördelning (Detailed allocation results)
   // ----------------------------------------------------
-  const headers = [
-    'Förening', 
-    'Aktiviteter', 
-    'Flickor (antal)', 
-    'Pojkar (antal)', 
-    'Flickor funktionsnedsättning (antal)', 
-    'Pojkar funktionsnedsättning (antal)', 
-    'Totalt antal deltagare', 
-    'Poäng (deltagare * multiplier)', 
-    'Andel poäng (%)', 
-    'Tilldelad tid (h/vecka)'
-  ];
-  
+  let headers = [];
+  let rows = [];
   const sumPoints = allocatedData.reduce((sum, item) => sum + item.points, 0);
   
-  const rows = allocatedData.map(item => [
-    item.name,
-    item.activities || 'N/A',
-    item.girls || 0,
-    item.boys || 0,
-    item.girlsDisability || 0,
-    item.boysDisability || 0,
-    item.participants || 0,
-    parseFloat(item.points.toFixed(1)),
-    parseFloat(((sumPoints > 0 ? (item.points / sumPoints) : 0) * 100).toFixed(2)),
-    parseFloat(item.totalHours.toFixed(1))
-  ]);
+  if (appState.dataType === 'age-template') {
+    headers = [
+      'Organization',
+      '5-9 år',
+      '10-15 år',
+      '16-20 år',
+      'Poäng',
+      'Andel %',
+      'Tilldelade tider'
+    ];
+    rows = allocatedData.map(item => [
+      item.name,
+      item.c5_9 || 0,
+      item.c10_15 || 0,
+      item.c16_20 || 0,
+      parseFloat(item.points.toFixed(1)),
+      parseFloat(((sumPoints > 0 ? (item.points / sumPoints) : 0) * 100).toFixed(2)),
+      parseFloat(item.totalHours.toFixed(1))
+    ]);
+  } else if (appState.dataType === 'detailed') {
+    headers = [
+      'Förening', 
+      'Aktiviteter', 
+      'Flickor (antal)', 
+      'Pojkar (antal)', 
+      'Flickor funktionsnedsättning (antal)', 
+      'Pojkar funktionsnedsättning (antal)', 
+      'Totalt antal deltagare', 
+      'Poäng', 
+      'Andel poäng (%)', 
+      'Tilldelad tid (h/vecka)'
+    ];
+    rows = allocatedData.map(item => [
+      item.name,
+      item.activities || 'N/A',
+      item.girls || 0,
+      item.boys || 0,
+      item.girlsDisability || 0,
+      item.boysDisability || 0,
+      item.participants || 0,
+      parseFloat(item.points.toFixed(1)),
+      parseFloat(((sumPoints > 0 ? (item.points / sumPoints) : 0) * 100).toFixed(2)),
+      parseFloat(item.totalHours.toFixed(1))
+    ]);
+  } else { // 'simple'
+    headers = [
+      'Förening',
+      'Medlemsantal',
+      'Poäng',
+      'Andel poäng (%)',
+      'Tilldelad tid (h/vecka)'
+    ];
+    rows = allocatedData.map(item => [
+      item.name,
+      item.participants || 0,
+      parseFloat(item.points.toFixed(1)),
+      parseFloat(((sumPoints > 0 ? (item.points / sumPoints) : 0) * 100).toFixed(2)),
+      parseFloat(item.totalHours.toFixed(1))
+    ]);
+  }
   
   const sheet1Data = [headers, ...rows];
   const wsAlloc = XLSX.utils.aoa_to_sheet(sheet1Data);

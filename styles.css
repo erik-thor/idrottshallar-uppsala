@@ -1715,3 +1715,30 @@ h3 {
   font-weight: 500;
   display: block;
 }
+
+/* ==========================================================================
+   Age Multipliers Configuration
+   ========================================================================== */
+.multipliers-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.multiplier-input-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.multiplier-input-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.input-with-suffix.mini {
+  width: 120px;
+}
+.input-with-suffix.mini input {
+  width: 100%;
+  padding-right: 3.5rem;
+}

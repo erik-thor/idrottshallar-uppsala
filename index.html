@@ -119,6 +119,40 @@
           </div>
         </section>
 
+        <!-- Age Multipliers Config Card -->
+        <section class="card multipliers-card" aria-labelledby="multipliers-title">
+          <div class="card-header">
+            <i data-lucide="calculator"></i>
+            <h2 id="multipliers-title">Åldersmultiplikatorer</h2>
+          </div>
+          <div class="card-body">
+            <p class="section-desc">Viktning och poängvärde per deltagare baserat på åldersgrupp.</p>
+            <div class="multipliers-form">
+              <div class="multiplier-input-group">
+                <label for="mult-5-9">5-9 år:</label>
+                <div class="input-with-suffix mini">
+                  <input type="number" id="mult-5-9" value="1" min="1" max="10" class="form-input multiplier-val-input">
+                  <span class="suffix">poäng</span>
+                </div>
+              </div>
+              <div class="multiplier-input-group">
+                <label for="mult-10-15">10-15 år:</label>
+                <div class="input-with-suffix mini">
+                  <input type="number" id="mult-10-15" value="2" min="1" max="10" class="form-input multiplier-val-input">
+                  <span class="suffix">poäng</span>
+                </div>
+              </div>
+              <div class="multiplier-input-group">
+                <label for="mult-16-20">16-20 år:</label>
+                <div class="input-with-suffix mini">
+                  <input type="number" id="mult-16-20" value="3" min="1" max="10" class="form-input multiplier-val-input">
+                  <span class="suffix">poäng</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Allocation Settings -->
         <section class="card settings-card" aria-labelledby="settings-title">
           <div class="card-header">
@@ -226,12 +260,17 @@
               <label class="toggle-option">
                 <input type="radio" name="data-format" value="detailed-list" checked>
                 <span class="radio-custom"></span>
-                <span><strong>A: Detaljerad deltagarlista</strong> (Innehåller förening, aktivitet, flickor, pojkar, funk-antal osv.)</span>
+                <span><strong>A: Detaljerad deltagarlista</strong> (Förening, aktivitet, flickor, pojkar, funk-antal osv.)</span>
+              </label>
+              <label class="toggle-option">
+                <input type="radio" name="data-format" value="age-template">
+                <span class="radio-custom"></span>
+                <span><strong>B: Åldersfördelning i kolumner</strong> (fordelningsmall_v5: 5-9 år, 10-15 år, 16-20 år)</span>
               </label>
               <label class="toggle-option">
                 <input type="radio" name="data-format" value="summary-list">
                 <span class="radio-custom"></span>
-                <span><strong>B: Enkel medlemslista</strong> (Enbart förening + totalt medlemsantal per rad)</span>
+                <span><strong>C: Enkel medlemslista</strong> (Enbart förening + totalt medlemsantal per rad)</span>
               </label>
             </div>
 
@@ -240,6 +279,8 @@
                 <label for="map-club-col" class="form-label">Förening / Klubb (Krävs):</label>
                 <select id="map-club-col" class="form-select"></select>
               </div>
+              
+              <!-- Detailed list fields (Option A) -->
               <div class="control-group map-detailed-only">
                 <label for="map-activity-col" class="form-label">Aktivitet / Idrott (Valfri):</label>
                 <select id="map-activity-col" class="form-select"></select>
@@ -260,6 +301,21 @@
                 <label for="map-boys-dis-col" class="form-label">Pojkar funktionsnedsättning:</label>
                 <select id="map-boys-dis-col" class="form-select"></select>
               </div>
+              
+              <!-- Age columns fields (Option B - fordelningsmall_v5) -->
+              <div class="control-group map-age-template-only hidden">
+                <label for="map-5-9-col" class="form-label">Kolumn för 5-9 år:</label>
+                <select id="map-5-9-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-age-template-only hidden">
+                <label for="map-10-15-col" class="form-label">Kolumn för 10-15 år:</label>
+                <select id="map-10-15-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-age-template-only hidden">
+                <label for="map-16-20-col" class="form-label">Kolumn för 16-20 år:</label>
+                <select id="map-16-20-col" class="form-select"></select>
+              </div>
+
               <div class="control-group">
                 <label for="map-total-col" class="form-label" id="map-total-label">Totalt antal deltagare:</label>
                 <select id="map-total-col" class="form-select"></select>
@@ -303,22 +359,10 @@
                 <span id="unallocated-hours-text">0.0 timmar är ej allokerade (buffert)</span>
               </div>
             </div>
-            <div class="table-wrapper">
+            <div class="table-wrapper" style="overflow-x: auto;">
               <table id="allocation-table" class="premium-table">
-                <thead>
-                  <tr>
-                    <th>Förening</th>
-                    <th>Aktiviteter</th>
-                    <th class="text-right">Flickor</th>
-                    <th class="text-right">Pojkar</th>
-                    <th class="text-right">Flickor (funk)</th>
-                    <th class="text-right">Pojkar (funk)</th>
-                    <th class="text-right">Totalt Deltagare</th>
-                    <th class="text-right">Beräknade Poäng</th>
-                    <th class="text-right table-col-base hidden">Bas-timmar</th>
-                    <th class="text-right table-col-prop hidden">Prop. timmar</th>
-                    <th class="text-right">Tilldelad tid (h/vecka)</th>
-                  </tr>
+                <thead id="allocation-table-head">
+                  <!-- Generated dynamically via JS to match loaded data type -->
                 </thead>
                 <tbody id="allocation-table-body">
                   <!-- JS generated rows -->

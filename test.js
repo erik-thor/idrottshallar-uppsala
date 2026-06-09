@@ -324,4 +324,94 @@ assert(hall3.size === "liten", `Gympasal Skola size should be liten, got ${hall3
 
 console.log("✅ Sports Arena Size Import passed.");
 
-console.log("\n⭐ ALL PHASE 2 UNIT TESTS PASSED SUCCESSFULLY! ⭐");
+// ----------------------------------------------------
+// Test Case 7: fordelningsmall_v5 Age-bracket Columns
+// ----------------------------------------------------
+console.log("Testing fordelningsmall_v5 Age-Bracket Columns...");
+appState.files = []; // Reset
+
+// Simulation of raw Excel data rows matching fordelningsmall_v5
+const mockAgeBracketExcelRows = [
+  ["Organization", "5-9 år", "10-15 år", "16-20 år"],
+  ["Uppsala Basket", "100", "50", "10"],
+  ["IK Sirius", "200", "100", "20"]
+];
+
+currentFileData = {
+  name: 'fordelningsmall_v5.xlsx',
+  size: '18 KB',
+  headers: mockAgeBracketExcelRows[0],
+  rows: mockAgeBracketExcelRows.slice(1)
+};
+
+// Mock document for mapping age columns
+global.document.getElementById = (id) => {
+  const el = createMockElement();
+  if (id === 'map-club-col') el.value = '0';
+  if (id === 'map-5-9-col') el.value = '1';
+  if (id === 'map-10-15-col') el.value = '2';
+  if (id === 'map-16-20-col') el.value = '3';
+  if (id === 'map-total-col') el.value = '-1'; // Let it auto-calculate
+  if (id === 'mult-5-9') el.value = '1';
+  if (id === 'mult-10-15') el.value = '2';
+  if (id === 'mult-16-20') el.value = '3';
+  if (id === 'base-hours-input') el.value = '2';
+  return el;
+};
+
+global.document.querySelector = (selector) => {
+  const el = createMockElement();
+  if (selector === 'input[name="data-format"]:checked') {
+    el.value = 'age-template';
+  }
+  return el;
+};
+
+// Process file (this will autodetect headers and show mapper)
+global.processRawFile(mockAgeBracketExcelRows);
+
+// Run apply mapping to load records into appState.files
+global.handleApplyMapping();
+
+assert(appState.files.length === 1, "Should add 1 file of age-template type");
+assert(appState.dataType === 'age-template', `Active dataType should be 'age-template', got ${appState.dataType}`);
+
+const basketRec = appState.files[0].records.find(r => r.club === "Uppsala Basket");
+assert(basketRec !== undefined, "Should parse Uppsala Basket");
+assert(basketRec.c5_9 === 100, `c5_9 should be 100, got ${basketRec.c5_9}`);
+assert(basketRec.c10_15 === 50, `c10_15 should be 50, got ${basketRec.c10_15}`);
+assert(basketRec.c16_20 === 10, `c16_20 should be 10, got ${basketRec.c16_20}`);
+assert(basketRec.total === 160, `total should be 160 (auto-calculated), got ${basketRec.total}`);
+
+// Run aggregation to calculate points
+global.aggregateAndAllocate();
+
+const basketAssoc = appState.associations.find(a => a.name === "Uppsala Basket");
+assert(basketAssoc !== undefined, "Should aggregate Uppsala Basket");
+// Points = 100 * 1 + 50 * 2 + 10 * 3 = 100 + 100 + 30 = 230
+assert(basketAssoc.points === 230, `Uppsala Basket points should be 230, got ${basketAssoc.points}`);
+
+const siriusAssoc = appState.associations.find(a => a.name === "IK Sirius");
+// Points = 200 * 1 + 100 * 2 + 20 * 3 = 200 + 200 + 60 = 460
+assert(siriusAssoc.points === 460, `IK Sirius points should be 460, got ${siriusAssoc.points}`);
+
+// Now test changing multipliers
+global.document.getElementById = (id) => {
+  const el = createMockElement();
+  if (id === 'mult-5-9') el.value = '2'; // Double multiplier for youngest
+  if (id === 'mult-10-15') el.value = '2';
+  if (id === 'mult-16-20') el.value = '3';
+  return el;
+};
+
+// Re-aggregate and check points
+global.aggregateAndAllocate();
+
+const basketAssocNew = appState.associations.find(a => a.name === "Uppsala Basket");
+// Points = 100 * 2 + 50 * 2 + 10 * 3 = 200 + 100 + 30 = 330
+assert(basketAssocNew.points === 330, `Uppsala Basket points with new multipliers should be 330, got ${basketAssocNew.points}`);
+
+console.log("✅ fordelningsmall_v5 Age-Bracket Columns passed.");
+
+console.log("\n⭐ ALL PHASE 3 UNIT TESTS PASSED SUCCESSFULLY! ⭐");
+
