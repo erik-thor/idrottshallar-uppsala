@@ -2,46 +2,46 @@
 // Uppsala Sports Hall Allocator ("Uppsala Hallfördelare") - Core Application
 // ==========================================================================
 
-// Default list of prominent Uppsala sports halls
+// Default list of prominent Uppsala sports halls categorized by size (liten, stor, storst)
 const DEFAULT_HALLS = [
-  { id: 'ifu-arena-a', name: 'IFU Arena (Arena A - Gibon)', hours: 40, active: true },
-  { id: 'ifu-arena-b', name: 'IFU Arena (Arena B - ICA)', hours: 35, active: true },
-  { id: 'ifu-arena-c', name: 'IFU Arena (Arena C)', hours: 30, active: true },
-  { id: 'ifu-arena-d', name: 'IFU Arena (Arena D)', hours: 25, active: true },
-  { id: 'ifu-arena-e', name: 'IFU Arena (Arena E)', hours: 20, active: true },
-  { id: 'fyrishov-a', name: 'Fyrishov (Hall A)', hours: 45, active: true },
-  { id: 'fyrishov-b', name: 'Fyrishov (Hall B)', hours: 40, active: true },
-  { id: 'fyrishov-c', name: 'Fyrishov (Hall C)', hours: 35, active: true },
-  { id: 'fyrishov-d', name: 'Fyrishov (Hall D)', hours: 30, active: true },
-  { id: 'fyrishov-e', name: 'Fyrishov (Hall E)', hours: 25, active: true },
-  { id: 'fyrishov-f', name: 'Fyrishov (Hall F)', hours: 20, active: true },
-  { id: 'rosendalshallen', name: 'Rosendalshallen', hours: 35, active: true },
-  { id: 'gamla-uppsala', name: 'Gamla Uppsala Sporthall', hours: 30, active: true },
-  { id: 'gottsundahallen', name: 'Gottsundahallen', hours: 30, active: true },
-  { id: 'tiundahallen', name: 'Tiundahallen', hours: 25, active: true },
-  { id: 'valsatrahallen', name: 'Valsätrahallen', hours: 25, active: true },
-  { id: 'allianshallen', name: 'Allianshallen', hours: 40, active: true }
+  { id: 'ifu-arena-a', name: 'IFU Arena (Arena A - Gibon)', hours: 40, size: 'storst', active: true },
+  { id: 'ifu-arena-b', name: 'IFU Arena (Arena B - ICA)', hours: 35, size: 'storst', active: true },
+  { id: 'ifu-arena-c', name: 'IFU Arena (Arena C)', hours: 30, size: 'stor', active: true },
+  { id: 'ifu-arena-d', name: 'IFU Arena (Arena D)', hours: 25, size: 'stor', active: true },
+  { id: 'ifu-arena-e', name: 'IFU Arena (Arena E)', hours: 20, size: 'stor', active: true },
+  { id: 'fyrishov-a', name: 'Fyrishov (Hall A)', hours: 45, size: 'storst', active: true },
+  { id: 'fyrishov-b', name: 'Fyrishov (Hall B)', hours: 40, size: 'stor', active: true },
+  { id: 'fyrishov-c', name: 'Fyrishov (Hall C)', hours: 35, size: 'stor', active: true },
+  { id: 'fyrishov-d', name: 'Fyrishov (Hall D)', hours: 30, size: 'stor', active: true },
+  { id: 'fyrishov-e', name: 'Fyrishov (Hall E)', hours: 25, size: 'stor', active: true },
+  { id: 'fyrishov-f', name: 'Fyrishov (Hall F)', hours: 20, size: 'liten', active: true },
+  { id: 'rosendalshallen', name: 'Rosendalshallen', hours: 35, size: 'stor', active: true },
+  { id: 'gamla-uppsala', name: 'Gamla Uppsala Sporthall', hours: 30, size: 'liten', active: true },
+  { id: 'gottsundahallen', name: 'Gottsundahallen', hours: 30, size: 'stor', active: true },
+  { id: 'tiundahallen', name: 'Tiundahallen', hours: 25, size: 'liten', active: true },
+  { id: 'valsatrahallen', name: 'Valsätrahallen', hours: 25, size: 'liten', active: true },
+  { id: 'allianshallen', name: 'Allianshallen', hours: 40, size: 'stor', active: true }
 ];
 
 // Global Application State
 const appState = {
   halls: JSON.parse(JSON.stringify(DEFAULT_HALLS)), // Deep copy defaults
   tiers: [
-    { label: 'Liten', limit: 100, hours: 2 },
-    { label: 'Mellan', limit: 500, hours: 5 },
+    { label: 'Liten', limit: 200, hours: 2 },
+    { label: 'Mellan', limit: 1000, hours: 5 },
     { label: 'Stor', limit: Infinity, hours: 10 }
   ],
-  associations: [],
+  associations: [],       // Combined list of associations aggregated from active files
+  files: [],              // Active uploaded participant files: { id, name, size, records: [], multiplier, ageGroup }
   activeAlgo: 'pure-proportional',
-  fileName: '',
-  fileSize: '',
-  pendingFileName: '',
-  pendingFileSize: '',
-  lastAllocatedData: []
+  lastAllocatedData: [],
+  hallsFile: null         // Uploaded halls file: { name, size }
 };
 
-// Raw file data placeholder
+// Raw file details during import
 let currentFileData = {
+  name: '',
+  size: '',
   headers: [],
   rows: []
 };
@@ -57,20 +57,18 @@ window.addEventListener('DOMContentLoaded', () => {
   initHallsList();
   initTiersList();
   initEventListeners();
-  updateAllocation(); // Run initial math (will show 0 values)
+  updateAllocation(); // Run initial math
 });
 
-// Populate Halls Configurator
 function initHallsList() {
   renderHallsList();
 }
 
-// Populate Tier Configurator
 function initTiersList() {
   renderTiers();
 }
 
-// Register Events
+// Register UI Events
 function initEventListeners() {
   // Add custom hall form
   document.getElementById('add-hall-btn').addEventListener('click', handleAddHall);
@@ -82,6 +80,9 @@ function initEventListeners() {
   document.getElementById('new-hall-hours').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleAddHall();
   });
+
+  // Reset custom halls button
+  document.getElementById('reset-halls-btn').addEventListener('click', handleResetHalls);
 
   // Algorithm configuration panels toggle
   const algoRadios = document.getElementsByName('allocation-algo');
@@ -147,15 +148,19 @@ function initEventListeners() {
     }
   });
 
-  // Format Toggle inside Mapper panel
+  // Format Toggle inside Mapper panel (Toggles detailed columns inputs)
   const formatRadios = document.getElementsByName('data-format');
   formatRadios.forEach(radio => {
     radio.addEventListener('change', (e) => {
-      const memberGroup = document.getElementById('mapper-member-count-group');
+      const detailedCols = document.querySelectorAll('.map-detailed-only');
+      const totalLabel = document.getElementById('map-total-label');
+      
       if (e.target.value === 'summary-list') {
-        memberGroup.classList.remove('hidden');
+        detailedCols.forEach(el => el.classList.add('hidden'));
+        totalLabel.textContent = "Kolumn för Medlemsantal (Krävs):";
       } else {
-        memberGroup.classList.add('hidden');
+        detailedCols.forEach(el => el.classList.remove('hidden'));
+        totalLabel.textContent = "Totalt antal deltagare (Krävs):";
       }
     });
   });
@@ -166,28 +171,7 @@ function initEventListeners() {
   // Cancel column mapper button
   document.getElementById('cancel-mapping-btn').addEventListener('click', () => {
     document.getElementById('mapper-panel').classList.add('hidden');
-    if (appState.associations.length > 0) {
-      document.getElementById('results-container').classList.remove('hidden');
-      document.getElementById('active-file-indicator').classList.remove('hidden');
-    } else {
-      document.getElementById('dropzone').classList.remove('hidden');
-    }
-  });
-
-  // Remove active file button
-  document.getElementById('remove-file-btn').addEventListener('click', handleRemoveFile);
-
-  // Tab navigation buttons
-  const tabButtons = document.querySelectorAll('.tab-btn');
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabButtons.forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-      
-      btn.classList.add('active');
-      const tabId = btn.getAttribute('data-tab');
-      document.getElementById(tabId).classList.add('active');
-    });
+    document.getElementById('dropzone').classList.remove('hidden');
   });
 
   // Table Search input filter
@@ -199,8 +183,8 @@ function initEventListeners() {
   document.getElementById('mock-data-btn').addEventListener('click', handleLoadMockData);
 
   // Export Buttons
-  document.getElementById('export-csv-btn').addEventListener('click', () => {
-    exportCSV(appState.lastAllocatedData);
+  document.getElementById('export-xlsx-btn').addEventListener('click', () => {
+    exportExcel(appState.lastAllocatedData);
   });
 
   document.getElementById('print-pdf-btn').addEventListener('click', () => {
@@ -218,56 +202,82 @@ function renderHallsList() {
   const container = document.getElementById('halls-list-container');
   container.innerHTML = '';
   
+  const sizes = {
+    storst: { label: 'Störst (Stora arenor / A-hallar)', list: [] },
+    stor: { label: 'Stor (Standard sporthallar)', list: [] },
+    liten: { label: 'Liten (Skol- och träningshallar)', list: [] }
+  };
+  
   appState.halls.forEach(hall => {
-    const item = document.createElement('div');
-    item.className = `hall-item ${hall.active ? '' : 'inactive'}`;
-    item.innerHTML = `
-      <label class="hall-label-group">
-        <div class="checkbox-custom-wrapper">
-          <input type="checkbox" ${hall.active ? 'checked' : ''} data-hall-id="${hall.id}">
-          <span class="checkbox-custom"></span>
+    if (sizes[hall.size]) {
+      sizes[hall.size].list.push(hall);
+    } else {
+      sizes.stor.list.push(hall); // Fallback
+    }
+  });
+  
+  Object.keys(sizes).forEach(sizeKey => {
+    const group = sizes[sizeKey];
+    if (group.list.length === 0) return;
+    
+    // Group header showing size-specific hours capacity
+    const groupHours = group.list.filter(h => h.active).reduce((sum, h) => sum + h.hours, 0);
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'halls-size-header';
+    groupHeader.innerHTML = `<span>${group.label}</span> <span class="size-badge size-${sizeKey}">${groupHours.toFixed(1)}h</span>`;
+    container.appendChild(groupHeader);
+    
+    group.list.forEach(hall => {
+      const item = document.createElement('div');
+      item.className = `hall-item ${hall.active ? '' : 'inactive'}`;
+      item.innerHTML = `
+        <label class="hall-label-group">
+          <div class="checkbox-custom-wrapper">
+            <input type="checkbox" ${hall.active ? 'checked' : ''} data-hall-id="${hall.id}">
+            <span class="checkbox-custom"></span>
+          </div>
+          <span class="hall-name">${hall.name}</span>
+        </label>
+        <div class="hall-hours-input-wrapper">
+          <input type="number" value="${hall.hours}" min="0" max="168" step="0.5" class="form-input" data-hall-id="${hall.id}">
+          <span>h</span>
         </div>
-        <span class="hall-name">${hall.name}</span>
-      </label>
-      <div class="hall-hours-input-wrapper">
-        <input type="number" value="${hall.hours}" min="0" max="168" step="0.5" class="form-input" data-hall-id="${hall.id}">
-        <span>h</span>
-      </div>
-      <button class="hall-delete-btn" data-hall-id="${hall.id}" title="Ta bort hall">
-        <i data-lucide="trash-2"></i>
-      </button>
-    `;
-    
-    // Checkbox toggle event
-    const checkbox = item.querySelector('input[type="checkbox"]');
-    checkbox.addEventListener('change', (e) => {
-      hall.active = e.target.checked;
-      if (hall.active) {
-        item.classList.remove('inactive');
-      } else {
-        item.classList.add('inactive');
-      }
-      updateAllocation();
+        <button class="hall-delete-btn" data-hall-id="${hall.id}" title="Ta bort hall">
+          <i data-lucide="trash-2"></i>
+        </button>
+      `;
+      
+      // Checkbox toggle event
+      const checkbox = item.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener('change', (e) => {
+        hall.active = e.target.checked;
+        if (hall.active) {
+          item.classList.remove('inactive');
+        } else {
+          item.classList.add('inactive');
+        }
+        updateAllocation();
+      });
+      
+      // Available hours input change
+      const hourInput = item.querySelector('input[type="number"]');
+      hourInput.addEventListener('change', (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val) || val < 0) val = 0;
+        hall.hours = val;
+        updateAllocation();
+      });
+      
+      // Delete hall button
+      const deleteBtn = item.querySelector('.hall-delete-btn');
+      deleteBtn.addEventListener('click', () => {
+        appState.halls = appState.halls.filter(h => h.id !== hall.id);
+        renderHallsList();
+        updateAllocation();
+      });
+      
+      container.appendChild(item);
     });
-    
-    // Available hours input change
-    const hourInput = item.querySelector('input[type="number"]');
-    hourInput.addEventListener('change', (e) => {
-      let val = parseFloat(e.target.value);
-      if (isNaN(val) || val < 0) val = 0;
-      hall.hours = val;
-      updateAllocation();
-    });
-    
-    // Delete hall button
-    const deleteBtn = item.querySelector('.hall-delete-btn');
-    deleteBtn.addEventListener('click', () => {
-      appState.halls = appState.halls.filter(h => h.id !== hall.id);
-      renderHallsList();
-      updateAllocation();
-    });
-    
-    container.appendChild(item);
   });
   
   lucide.createIcons();
@@ -276,9 +286,11 @@ function renderHallsList() {
 function handleAddHall() {
   const nameInput = document.getElementById('new-hall-name');
   const hoursInput = document.getElementById('new-hall-hours');
+  const sizeSelect = document.getElementById('new-hall-size');
   
   const name = nameInput.value.trim();
   let hours = parseFloat(hoursInput.value);
+  const size = sizeSelect.value;
   
   if (!name) {
     alert("Vänligen ange ett namn på sporthallen.");
@@ -294,6 +306,7 @@ function handleAddHall() {
     id: id,
     name: name,
     hours: hours,
+    size: size,
     active: true
   });
   
@@ -302,6 +315,17 @@ function handleAddHall() {
   
   renderHallsList();
   updateAllocation();
+}
+
+function handleResetHalls() {
+  if (confirm("Vill du återställa hallistan till standardhallarna? Uppladdad sporthallslista kommer att tas bort.")) {
+    appState.halls = JSON.parse(JSON.stringify(DEFAULT_HALLS));
+    appState.hallsFile = null;
+    
+    document.getElementById('halls-file-indicator').classList.add('hidden');
+    renderHallsList();
+    updateAllocation();
+  }
 }
 
 // ==========================================================================
@@ -320,7 +344,7 @@ function renderTiers() {
     if (isLast) {
       const prevLimit = index === 0 ? 0 : appState.tiers[index-1].limit;
       div.innerHTML = `
-        <span class="tier-input-desc">> ${prevLimit} medl:</span>
+        <span class="tier-input-desc">> ${prevLimit} poäng:</span>
         <input type="number" class="tier-hours form-input" value="${tier.hours}" min="0" step="0.5" style="width: 55px">
         <span class="tier-input-desc">timmar</span>
       `;
@@ -329,7 +353,7 @@ function renderTiers() {
       div.innerHTML = `
         <span class="tier-input-desc">${prevLimit} - </span>
         <input type="number" class="tier-limit form-input" value="${tier.limit}" min="${prevLimit + 1}" style="width: 60px">
-        <span class="tier-input-desc">medl:</span>
+        <span class="tier-input-desc">poäng:</span>
         <input type="number" class="tier-hours form-input" value="${tier.hours}" min="0" step="0.5" style="width: 55px">
         <span class="tier-input-desc">timmar</span>
         ${appState.tiers.length > 2 ? `
@@ -389,7 +413,7 @@ function handleAddTier() {
   const lastItem = appState.tiers[len - 1];
   const secondLastItem = appState.tiers[len - 2];
   
-  const newLimit = secondLastItem ? secondLastItem.limit + 200 : 200;
+  const newLimit = secondLastItem ? secondLastItem.limit + 500 : 500;
   const newHours = secondLastItem ? secondLastItem.hours + 2 : 4;
   
   const newTier = {
@@ -412,8 +436,8 @@ function handleFileSelect() {
   const file = fileInput.files[0];
   if (!file) return;
   
-  appState.pendingFileName = file.name;
-  appState.pendingFileSize = formatBytes(file.size);
+  currentFileData.name = file.name;
+  currentFileData.size = formatBytes(file.size);
   
   const reader = new FileReader();
   reader.onload = function(e) {
@@ -429,7 +453,7 @@ function handleFileSelect() {
         return;
       }
       
-      processRawRows(rawRows);
+      processRawFile(rawRows);
     } catch (err) {
       console.error(err);
       alert("Kunde inte läsa filen. Se till att det är en korrekt sparad .xlsx, .xls eller .csv-fil.");
@@ -438,7 +462,7 @@ function handleFileSelect() {
   reader.readAsArrayBuffer(file);
 }
 
-function processRawRows(rawRows) {
+function processRawFile(rawRows) {
   // Find first row with cells
   let headerIndex = -1;
   for (let i = 0; i < rawRows.length; i++) {
@@ -456,190 +480,498 @@ function processRawRows(rawRows) {
   const headers = rawRows[headerIndex].map((h, index) => h ? String(h).trim() : `Kolumn ${index + 1}`);
   const dataRows = rawRows.slice(headerIndex + 1).filter(row => row.some(cell => cell !== ""));
   
-  currentFileData = {
-    headers: headers,
-    rows: dataRows
-  };
+  currentFileData.headers = headers;
+  currentFileData.rows = dataRows;
   
-  showColumnMapper(headers);
-}
-
-function showColumnMapper(headers) {
-  const clubSelect = document.getElementById('map-club-col');
-  const membersSelect = document.getElementById('map-members-col');
+  // ----------------------------------------------------
+  // Autodetection: Arena List vs. Participants List
+  // ----------------------------------------------------
+  let isHallsFile = false;
+  const hallKeywords = ['sporthall', 'arena', 'hall', 'storlek', 'storlekstyp', 'kategori'];
   
-  clubSelect.innerHTML = '';
-  membersSelect.innerHTML = '';
-  
-  headers.forEach((header, index) => {
-    const opt1 = document.createElement('option');
-    opt1.value = index;
-    opt1.textContent = header;
-    clubSelect.appendChild(opt1);
-    
-    const opt2 = document.createElement('option');
-    opt2.value = index;
-    opt2.textContent = header;
-    membersSelect.appendChild(opt2);
-  });
-  
-  // Autodetection keyword match
-  let autoClubIdx = -1;
-  let autoMembersIdx = -1;
-  
-  const clubKeywords = ['klubb', 'förening', 'forening', 'association', 'club', 'team', 'namn', 'name', 'organisation'];
-  const memberKeywords = ['medlemmar', 'antal', 'members', 'size', 'count', 'antal medlemmar', 'medlemsantal'];
-  
-  headers.forEach((h, index) => {
-    const lowerH = h.toLowerCase();
-    if (autoClubIdx === -1 && clubKeywords.some(keyword => lowerH.includes(keyword))) {
-      autoClubIdx = index;
-    }
-    if (autoMembersIdx === -1 && memberKeywords.some(keyword => lowerH.includes(keyword))) {
-      autoMembersIdx = index;
+  // Count matches
+  let matches = 0;
+  headers.forEach(h => {
+    const lh = h.toLowerCase();
+    if (hallKeywords.some(kw => lh.includes(kw))) {
+      matches++;
     }
   });
   
-  if (autoClubIdx !== -1) clubSelect.value = autoClubIdx;
-  if (autoMembersIdx !== -1) membersSelect.value = autoMembersIdx;
-  
-  // Format selection defaults
-  const formatRadios = document.getElementsByName('data-format');
-  const memberGroup = document.getElementById('mapper-member-count-group');
-  
-  if (autoClubIdx !== -1 && autoMembersIdx !== -1) {
-    formatRadios[1].checked = true; // summary-list
-    memberGroup.classList.remove('hidden');
-  } else {
-    formatRadios[0].checked = true; // raw-list
-    memberGroup.classList.add('hidden');
+  if (matches >= 2 || headers.some(h => h.toLowerCase() === 'storlek' || h.toLowerCase() === 'arena')) {
+    isHallsFile = true;
   }
   
-  // Transition panels
+  if (isHallsFile) {
+    importHallsData();
+  } else {
+    // Show Column Mapping modal for participants
+    showColumnMapper(headers);
+  }
+}
+
+// Import Sporthalls from Excel
+function importHallsData() {
+  const headers = currentFileData.headers;
+  const rows = currentFileData.rows;
+  
+  let nameColIdx = -1;
+  let sizeColIdx = -1;
+  let hoursColIdx = -1;
+  
+  const nameKws = ['arena', 'hall', 'sporthall', 'namn', 'sporthallar', 'arenor'];
+  const sizeKws = ['storlek', 'storlekstyp', 'kategori', 'typ', 'size'];
+  const hoursKws = ['timmar', 'timantal', 'bokningstimmar', 'hours', 'tid'];
+  
+  headers.forEach((h, idx) => {
+    const lh = h.toLowerCase();
+    if (nameColIdx === -1 && nameKws.some(kw => lh.includes(kw))) nameColIdx = idx;
+    if (sizeColIdx === -1 && sizeKws.some(kw => lh.includes(kw))) sizeColIdx = idx;
+    if (hoursColIdx === -1 && hoursKws.some(kw => lh.includes(kw))) hoursColIdx = idx;
+  });
+  
+  // Fallbacks if not auto-detected
+  if (nameColIdx === -1) nameColIdx = 0;
+  if (sizeColIdx === -1 && headers.length > 1) sizeColIdx = 1;
+  if (hoursColIdx === -1 && headers.length > 2) hoursColIdx = 2;
+  
+  if (hoursColIdx === -1 || nameColIdx === -1) {
+    alert("Kunde inte läsa in sporthallarna. Filen saknar giltiga kolumner för namn och timmar.");
+    return;
+  }
+  
+  let importedHalls = [];
+  rows.forEach((row, idx) => {
+    const name = String(row[nameColIdx] || '').trim();
+    if (!name) return;
+    
+    let hours = parseFloat(row[hoursColIdx]);
+    if (isNaN(hours) || hours < 0) hours = 0;
+    
+    // Parse size category
+    let sizeRaw = String(row[sizeColIdx] || '').toLowerCase();
+    let size = 'stor'; // Default size
+    if (sizeRaw.includes('storst') || sizeRaw.includes('störst') || sizeRaw.includes('biggest') || sizeRaw.includes('large') || sizeRaw.includes('c-hall') || sizeRaw.includes('a-hall')) {
+      size = 'storst';
+    } else if (sizeRaw.includes('liten') || sizeRaw.includes('small') || sizeRaw.includes('basic') || sizeRaw.includes('skola') || sizeRaw.includes('gymst')) {
+      size = 'liten';
+    }
+    
+    importedHalls.push({
+      id: 'import-' + idx + '-' + Date.now(),
+      name: name,
+      hours: hours,
+      size: size,
+      active: true
+    });
+  });
+  
+  if (importedHalls.length === 0) {
+    alert("Inga giltiga sporthallar hittades i filen.");
+    return;
+  }
+  
+  appState.halls = importedHalls;
+  appState.hallsFile = {
+    name: currentFileData.name,
+    size: currentFileData.size
+  };
+  
+  // Update UI indicators
+  document.getElementById('halls-file-name').textContent = appState.hallsFile.name;
+  document.getElementById('halls-file-indicator').classList.remove('hidden');
+  
+  renderHallsList();
+  updateAllocation();
+  alert(`Lyckades importera ${importedHalls.length} sporthallar!`);
+}
+
+// Show Column Mapper Wizard for Participants
+function showColumnMapper(headers) {
+  const fileDesc = document.getElementById('mapper-filename-desc');
+  fileDesc.innerHTML = `Vi hittade flera kolumner i filen <strong>${currentFileData.name}</strong>. Välj hur data ska tolkas:`;
+  
+  const selects = {
+    club: document.getElementById('map-club-col'),
+    activity: document.getElementById('map-activity-col'),
+    girls: document.getElementById('map-girls-col'),
+    boys: document.getElementById('map-boys-col'),
+    girlsDis: document.getElementById('map-girls-dis-col'),
+    boysDis: document.getElementById('map-boys-dis-col'),
+    total: document.getElementById('map-total-col')
+  };
+  
+  // Populate options
+  Object.values(selects).forEach(sel => {
+    sel.innerHTML = '';
+    
+    // Add optional tag to optional selectors
+    if (sel.id === 'map-activity-col' || sel.id === 'map-girls-col' || sel.id === 'map-boys-col' || sel.id === 'map-girls-dis-col' || sel.id === 'map-boys-dis-col') {
+      const opt = document.createElement('option');
+      opt.value = '-1';
+      opt.textContent = '-- Ej angiven (Valfri) --';
+      sel.appendChild(opt);
+    }
+    
+    headers.forEach((header, index) => {
+      const opt = document.createElement('option');
+      opt.value = index;
+      opt.textContent = header;
+      sel.appendChild(opt);
+    });
+  });
+  
+  // Autodetection of columns
+  let autoClub = -1, autoAct = -1, autoGirls = -1, autoBoys = -1, autoGirlsDis = -1, autoBoysDis = -1, autoTotal = -1;
+  
+  headers.forEach((h, index) => {
+    const lh = h.toLowerCase();
+    
+    // Club Name
+    if (autoClub === -1 && ['förening', 'forening', 'klubb', 'organisation', 'association', 'club', 'team'].some(kw => lh.includes(kw))) {
+      autoClub = index;
+    }
+    // Activity
+    if (autoAct === -1 && ['aktivitet', 'idrott', 'gren', 'sport', 'activity'].some(kw => lh.includes(kw))) {
+      autoAct = index;
+    }
+    // Girls
+    if (autoGirls === -1 && ['flickor', 'tjejer', 'girls', 'flickdeltagare', 'unika flickor'].some(kw => lh.includes(kw))) {
+      autoGirls = index;
+    }
+    // Boys
+    if (autoBoys === -1 && ['pojkar', 'killar', 'boys', 'pojkdeltagare', 'unika pojkar'].some(kw => lh.includes(kw))) {
+      autoBoys = index;
+    }
+    // Girls Disabled
+    if (autoGirlsDis === -1 && ['funktionsnedsättning flickor', 'funk flickor', 'funktionsnedsatta flickor', 'disabilities girls'].some(kw => lh.includes(kw) || (lh.includes('funktionsneds') && lh.includes('flick')))) {
+      autoGirlsDis = index;
+    }
+    // Boys Disabled
+    if (autoBoysDis === -1 && ['funktionsnedsättning pojkar', 'funk pojkar', 'funktionsnedsatta pojkar', 'disabilities boys'].some(kw => lh.includes(kw) || (lh.includes('funktionsneds') && lh.includes('pojk')))) {
+      autoBoysDis = index;
+    }
+    // Total Participants
+    if (autoTotal === -1 && ['totalt deltagare', 'deltagare totalt', 'antal deltagare', 'total deltagare', 'totalt antal deltagare', 'medlemmar', 'medlemsantal', 'totalt', 'total'].some(kw => lh.includes(kw))) {
+      autoTotal = index;
+    }
+  });
+  
+  // Apply auto-detected choices
+  if (autoClub !== -1) selects.club.value = autoClub;
+  if (autoAct !== -1) selects.activity.value = autoAct;
+  if (autoGirls !== -1) selects.girls.value = autoGirls;
+  if (autoBoys !== -1) selects.boys.value = autoBoys;
+  if (autoGirlsDis !== -1) selects.girlsDis.value = autoGirlsDis;
+  if (autoBoysDis !== -1) selects.boysDis.value = autoBoysDis;
+  if (autoTotal !== -1) selects.total.value = autoTotal;
+  
+  // Format Selection Toggle
+  const formatRadios = document.getElementsByName('data-format');
+  const detailedCols = document.querySelectorAll('.map-detailed-only');
+  const totalLabel = document.getElementById('map-total-label');
+  
+  // If we have detailed columns (like girls/boys), choose detailed format
+  if (autoGirls !== -1 || autoBoys !== -1) {
+    formatRadios[0].checked = true; // detailed
+    detailedCols.forEach(el => el.classList.remove('hidden'));
+    totalLabel.textContent = "Totalt antal deltagare (Krävs):";
+  } else {
+    formatRadios[1].checked = true; // summary
+    detailedCols.forEach(el => el.classList.add('hidden'));
+    totalLabel.textContent = "Kolumn för Medlemsantal (Krävs):";
+  }
+  
+  // Toggle UI visibility
   document.getElementById('mapper-panel').classList.remove('hidden');
   document.getElementById('dropzone').classList.add('hidden');
   document.getElementById('results-container').classList.add('hidden');
-  document.getElementById('active-file-indicator').classList.add('hidden');
 }
 
 function handleApplyMapping() {
   const format = document.querySelector('input[name="data-format"]:checked').value;
+  
   const clubIdx = parseInt(document.getElementById('map-club-col').value);
+  const actIdx = parseInt(document.getElementById('map-activity-col').value);
+  const girlsIdx = parseInt(document.getElementById('map-girls-col').value);
+  const boysIdx = parseInt(document.getElementById('map-boys-col').value);
+  const girlsDisIdx = parseInt(document.getElementById('map-girls-dis-col').value);
+  const boysDisIdx = parseInt(document.getElementById('map-boys-dis-col').value);
+  const totalIdx = parseInt(document.getElementById('map-total-col').value);
   
-  let associationsMap = {};
+  let records = [];
   
-  if (format === 'raw-list') {
-    // Count rows per club name
-    currentFileData.rows.forEach(row => {
-      const clubVal = row[clubIdx];
-      if (clubVal) {
-        const clubName = String(clubVal).trim();
-        if (clubName) {
-          associationsMap[clubName] = (associationsMap[clubName] || 0) + 1;
-        }
+  currentFileData.rows.forEach(row => {
+    const club = String(row[clubIdx] || '').trim();
+    if (!club) return;
+    
+    let total = parseInt(row[totalIdx]);
+    if (isNaN(total) || total < 0) total = 0;
+    
+    let activity = 'N/A';
+    let girls = 0;
+    let boys = 0;
+    let girlsDis = 0;
+    let boysDis = 0;
+    
+    if (format === 'detailed-list') {
+      if (actIdx !== -1) activity = String(row[actIdx] || '').trim();
+      
+      if (girlsIdx !== -1) {
+        girls = parseInt(row[girlsIdx]);
+        if (isNaN(girls) || girls < 0) girls = 0;
       }
-    });
-  } else {
-    // Read club name and its sum of members
-    const membersIdx = parseInt(document.getElementById('map-members-col').value);
-    currentFileData.rows.forEach(row => {
-      const clubVal = row[clubIdx];
-      const membersVal = row[membersIdx];
-      if (clubVal) {
-        const clubName = String(clubVal).trim();
-        if (clubName) {
-          let count = parseInt(membersVal);
-          if (isNaN(count) || count < 0) count = 0;
-          associationsMap[clubName] = (associationsMap[clubName] || 0) + count;
-        }
+      if (boysIdx !== -1) {
+        boys = parseInt(row[boysIdx]);
+        if (isNaN(boys) || boys < 0) boys = 0;
       }
+      if (girlsDisIdx !== -1) {
+        girlsDis = parseInt(row[girlsDisIdx]);
+        if (isNaN(girlsDis) || girlsDis < 0) girlsDis = 0;
+      }
+      if (boysDisIdx !== -1) {
+        boysDis = parseInt(row[boysDisIdx]);
+        if (isNaN(boysDis) || boysDis < 0) boysDis = 0;
+      }
+      
+      // If total is missing, calculate as girls + boys
+      if (total === 0 && (girls > 0 || boys > 0)) {
+        total = girls + boys;
+      }
+    }
+    
+    records.push({
+      club: club,
+      activity: activity,
+      girls: girls,
+      boys: boys,
+      girlsDisability: girlsDis,
+      boysDisability: boysDis,
+      total: total
     });
+  });
+  
+  if (records.length === 0) {
+    alert("Kunde inte läsa in några giltiga föreningar.");
+    return;
   }
   
-  // Map to list
-  let assocs = [];
-  for (const [name, members] of Object.entries(associationsMap)) {
-    assocs.push({ name, members });
+  // Add this file to data sources list
+  const fileId = 'file-' + Date.now();
+  
+  // Set default multiplier based on filename (e.g. if name contains *3 or 13-16, etc.)
+  let autoMultiplier = 2;
+  const fname = currentFileData.name.toLowerCase();
+  if (fname.includes('multiplier 3') || fname.includes('multiplikator 3') || fname.includes('13-16') || fname.includes('13 - 16')) {
+    autoMultiplier = 3;
+  } else if (fname.includes('multiplier 1') || fname.includes('17-')) {
+    autoMultiplier = 1;
   }
   
-  // Sort descending
-  assocs.sort((a, b) => b.members - a.members);
+  // Set default age group label
+  let ageLabel = 'Åldersgrupp ' + (appState.files.length + 1);
+  if (fname.includes('7-12') || fname.includes('7 - 12')) {
+    ageLabel = '7-12 år';
+  } else if (fname.includes('13-16') || fname.includes('13 - 16')) {
+    ageLabel = '13-16 år';
+  }
   
-  appState.associations = assocs;
-  appState.fileName = appState.pendingFileName;
-  appState.fileSize = appState.pendingFileSize;
+  appState.files.push({
+    id: fileId,
+    name: currentFileData.name,
+    size: currentFileData.size,
+    records: records,
+    multiplier: autoMultiplier,
+    ageGroup: ageLabel
+  });
   
-  // Transition panels
+  // Rebuild aggregated list & update
+  aggregateAndAllocate();
+  
+  // Hide mapper, restore dropzone (so users can upload more files!)
   document.getElementById('mapper-panel').classList.add('hidden');
-  document.getElementById('active-file-name').textContent = appState.fileName;
-  document.getElementById('active-file-size').textContent = `(${appState.fileSize})`;
-  document.getElementById('active-file-indicator').classList.remove('hidden');
-  document.getElementById('results-container').classList.remove('hidden');
-  
-  updateAllocation();
-}
-
-function handleRemoveFile() {
-  appState.associations = [];
-  appState.fileName = '';
-  appState.fileSize = '';
-  
-  document.getElementById('file-input').value = '';
-  document.getElementById('active-file-indicator').classList.add('hidden');
-  document.getElementById('results-container').classList.add('hidden');
   document.getElementById('dropzone').classList.remove('hidden');
-  
-  updateAllocation();
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+// Aggregate multiple uploaded files by Förening
+function aggregateAndAllocate() {
+  const listContainer = document.getElementById('data-sources-list');
+  listContainer.innerHTML = '';
+  
+  if (appState.files.length === 0) {
+    listContainer.innerHTML = `<div class="empty-list-text">Inga filer uppladdade. Använd dropzone till vänster för att lägga till deltagarlistor.</div>`;
+    appState.associations = [];
+    updateAllocation();
+    return;
+  }
+  
+  // Render files list in UI
+  appState.files.forEach(file => {
+    const item = document.createElement('div');
+    item.className = 'source-file-item';
+    item.innerHTML = `
+      <div class="source-file-info">
+        <span class="source-file-title">
+          <i data-lucide="file-spreadsheet"></i>
+          <span>${file.name}</span>
+        </span>
+        <span class="source-file-size">${file.size} - ${file.records.length} rader</span>
+      </div>
+      <div class="source-file-inputs">
+        <div class="source-input-group">
+          <label>Åldersgrupp:</label>
+          <input type="text" class="label-input form-input" value="${file.ageGroup}">
+        </div>
+        <div class="source-input-group">
+          <label>Multiplier:</label>
+          <input type="number" class="multiplier-input form-input" value="${file.multiplier}" min="1" max="10">
+        </div>
+        <button class="btn btn-icon btn-danger-link delete-file-btn" title="Ta bort fil">
+          <i data-lucide="trash-2"></i>
+        </button>
+      </div>
+    `;
+    
+    // Multiplier change event
+    const multInput = item.querySelector('.multiplier-input');
+    multInput.addEventListener('change', (e) => {
+      let val = parseInt(e.target.value);
+      if (isNaN(val) || val < 1) val = 1;
+      file.multiplier = val;
+      runAggregation();
+    });
+    
+    // Label change event
+    const labelInput = item.querySelector('.label-input');
+    labelInput.addEventListener('change', (e) => {
+      file.ageGroup = e.target.value.trim() || 'Åldersgrupp';
+      runAggregation();
+    });
+    
+    // Delete file event
+    const delBtn = item.querySelector('.delete-file-btn');
+    delBtn.addEventListener('click', () => {
+      appState.files = appState.files.filter(f => f.id !== file.id);
+      aggregateAndAllocate();
+    });
+    
+    listContainer.appendChild(item);
+  });
+  
+  lucide.createIcons();
+  runAggregation();
+}
+
+function runAggregation() {
+  let aggregatedMap = {};
+  
+  appState.files.forEach(file => {
+    const mult = file.multiplier;
+    
+    file.records.forEach(rec => {
+      const name = rec.club;
+      if (!name) return;
+      
+      if (!aggregatedMap[name]) {
+        aggregatedMap[name] = {
+          name: name,
+          activities: new Set(),
+          girls: 0,
+          boys: 0,
+          girlsDisability: 0,
+          boysDisability: 0,
+          participants: 0,
+          points: 0
+        };
+      }
+      
+      const assoc = aggregatedMap[name];
+      if (rec.activity && rec.activity !== 'N/A') {
+        assoc.activities.add(rec.activity);
+      }
+      
+      assoc.girls += rec.girls;
+      assoc.boys += rec.boys;
+      assoc.girlsDisability += rec.girlsDisability;
+      assoc.boysDisability += rec.boysDisability;
+      assoc.participants += rec.total;
+      assoc.points += rec.total * mult;
+    });
+  });
+  
+  // Convert sets to lists
+  appState.associations = Object.values(aggregatedMap).map(assoc => {
+    assoc.activities = Array.from(assoc.activities).join(', ') || 'N/A';
+    return assoc;
+  });
+  
+  // Sort descending by points
+  appState.associations.sort((a, b) => b.points - a.points);
+  
+  // Show results view
+  if (appState.associations.length > 0) {
+    document.getElementById('results-container').classList.remove('hidden');
+  } else {
+    document.getElementById('results-container').classList.add('hidden');
+  }
+  
+  updateAllocation();
 }
 
 // ==========================================================================
-// Mock Data Logic
+// Mock Data Generator
 // ==========================================================================
 function handleLoadMockData() {
-  appState.associations = [
-    { name: 'Uppsala Basket', members: 850 },
-    { name: 'FBC Uppsala (Innebandy)', members: 620 },
-    { name: 'Uppsala Handbollsklubb', members: 430 },
-    { name: 'IK Sirius', members: 1250 },
-    { name: 'Vaksala SK', members: 950 },
-    { name: 'Uppsala Innebandyförening', members: 380 },
-    { name: 'Gamla Upsala SK (GUSK)', members: 510 },
-    { name: 'Upsala IF Friidrott', members: 720 },
-    { name: 'Uppsala Gymnastikförening', members: 1100 },
-    { name: 'Uppsala Simsällskap', members: 1400 },
-    { name: 'Uppsala Judoklubb', members: 180 },
-    { name: 'Storvreta IBK', members: 800 },
-    { name: 'Danmarks IF', members: 320 },
-    { name: 'Uppsala Tennisklubb', members: 450 },
-    { name: 'Uppsala Tyngdlyftningsklubb', members: 95 }
+  // Clear previous files
+  appState.files = [];
+  
+  // 1. Mock File A: 7-12 years (multiplier 2)
+  const fileA_records = [
+    { club: 'Uppsala Basket', activity: 'Basket', girls: 210, boys: 200, girlsDisability: 4, boysDisability: 6, total: 410 },
+    { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 150, boys: 170, girlsDisability: 2, boysDisability: 3, total: 320 },
+    { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 110, boys: 90, girlsDisability: 0, boysDisability: 1, total: 200 },
+    { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 350, girlsDisability: 5, boysDisability: 8, total: 600 },
+    { club: 'Vaksala SK', activity: 'Fotboll', girls: 220, boys: 260, girlsDisability: 3, boysDisability: 2, total: 480 },
+    { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 340, boys: 310, girlsDisability: 8, boysDisability: 6, total: 650 },
+    { club: 'Storvreta IBK', activity: 'Innebandy', girls: 160, boys: 220, girlsDisability: 1, boysDisability: 4, total: 380 },
+    { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 450, boys: 100, girlsDisability: 6, boysDisability: 2, total: 550 }
   ];
   
-  appState.associations.sort((a, b) => b.members - a.members);
+  appState.files.push({
+    id: 'mock-file-1',
+    name: 'summering unika deltagare 2025 (7-12 år).xlsx',
+    size: '14.2 KB',
+    records: fileA_records,
+    multiplier: 2,
+    ageGroup: '7-12 år'
+  });
   
-  appState.fileName = 'uppsala_foreningar_mockdata.xlsx';
-  appState.fileSize = 'Test-sammanställning';
+  // 2. Mock File B: 13-16 years (multiplier 3)
+  const fileB_records = [
+    { club: 'Uppsala Basket', activity: 'Basket', girls: 220, boys: 220, girlsDisability: 3, boysDisability: 2, total: 440 },
+    { club: 'FBC Uppsala (Innebandy)', activity: 'Innebandy', girls: 130, boys: 170, girlsDisability: 1, boysDisability: 2, total: 300 },
+    { club: 'Uppsala Handbollsklubb', activity: 'Handboll', girls: 120, boys: 110, girlsDisability: 2, boysDisability: 1, total: 230 },
+    { club: 'IK Sirius', activity: 'Fotboll', girls: 250, boys: 400, girlsDisability: 3, boysDisability: 6, total: 650 },
+    { club: 'Vaksala SK', activity: 'Fotboll', girls: 210, boys: 260, girlsDisability: 1, boysDisability: 1, total: 470 },
+    { club: 'Uppsala Simsällskap', activity: 'Simning', girls: 380, boys: 370, girlsDisability: 7, boysDisability: 5, total: 750 },
+    { club: 'Storvreta IBK', activity: 'Innebandy', girls: 180, boys: 240, girlsDisability: 2, boysDisability: 2, total: 420 },
+    { club: 'Uppsala Gymnastikförening', activity: 'Gymnastik', girls: 480, boys: 70, girlsDisability: 4, boysDisability: 1, total: 550 }
+  ];
   
-  document.getElementById('dropzone').classList.add('hidden');
-  document.getElementById('mapper-panel').classList.add('hidden');
+  appState.files.push({
+    id: 'mock-file-2',
+    name: 'summering unika deltagare 2025 (13-16 år).xlsx',
+    size: '15.6 KB',
+    records: fileB_records,
+    multiplier: 3,
+    ageGroup: '13-16 år'
+  });
   
-  document.getElementById('active-file-name').textContent = appState.fileName;
-  document.getElementById('active-file-size').textContent = `(${appState.fileSize})`;
-  document.getElementById('active-file-indicator').classList.remove('hidden');
-  document.getElementById('results-container').classList.remove('hidden');
-  
-  updateAllocation();
+  aggregateAndAllocate();
 }
 
 // ==========================================================================
-// Core Hour Allocation Algorithms
+// Core Hour Allocation Algorithms (Distribution by Points)
 // ==========================================================================
 function updateAllocation() {
   const totalHoursAvailable = appState.halls
@@ -648,18 +980,28 @@ function updateAllocation() {
     
   document.getElementById('metric-total-hours').textContent = totalHoursAvailable.toFixed(1);
   
+  // Calculate size-specific available hours for sub-label
+  const litenHours = appState.halls.filter(h => h.active && h.size === 'liten').reduce((sum, h) => sum + h.hours, 0);
+  const storHours = appState.halls.filter(h => h.active && h.size === 'stor').reduce((sum, h) => sum + h.hours, 0);
+  const storstHours = appState.halls.filter(h => h.active && h.size === 'storst').reduce((sum, h) => sum + h.hours, 0);
+  document.getElementById('metric-hours-breakdown').textContent = `Liten: ${litenHours.toFixed(0)}h | Stor: ${storHours.toFixed(0)}h | Störst: ${storstHours.toFixed(0)}h`;
+  
   const totalClubs = appState.associations.length;
   document.getElementById('metric-total-clubs').textContent = totalClubs;
   
-  const totalMembers = appState.associations.reduce((sum, a) => sum + a.members, 0);
-  document.getElementById('metric-total-members').textContent = totalMembers.toLocaleString('sv-SE');
+  const totalParticipants = appState.associations.reduce((sum, a) => sum + a.participants, 0);
+  document.getElementById('metric-total-members').textContent = totalParticipants.toLocaleString('sv-SE');
   
-  const rate = totalMembers > 0 ? (totalHoursAvailable / totalMembers) : 0;
+  const totalPoints = appState.associations.reduce((sum, a) => sum + a.points, 0);
+  document.getElementById('metric-total-points').textContent = totalPoints.toLocaleString('sv-SE');
+  
+  // Allocation rate is Timmar/Poäng
+  const rate = totalPoints > 0 ? (totalHoursAvailable / totalPoints) : 0;
   document.getElementById('metric-allocation-rate').textContent = rate.toFixed(4);
   
-  // Enable / disable exports depending on data presence
+  // Toggle export buttons
   const hasData = totalClubs > 0;
-  document.getElementById('export-csv-btn').disabled = !hasData;
+  document.getElementById('export-xlsx-btn').disabled = !hasData;
   document.getElementById('print-pdf-btn').disabled = !hasData;
   
   if (!hasData) {
@@ -672,7 +1014,6 @@ function updateAllocation() {
   
   let allocatedData = [];
   let totalAllocatedHours = 0;
-  
   const algo = appState.activeAlgo;
   
   // ----------------------------------------------------
@@ -680,12 +1021,11 @@ function updateAllocation() {
   // ----------------------------------------------------
   if (algo === 'pure-proportional') {
     appState.associations.forEach(assoc => {
-      const share = totalMembers > 0 ? (assoc.members / totalMembers) : 0;
+      const share = totalPoints > 0 ? (assoc.points / totalPoints) : 0;
       const hours = totalHoursAvailable * share;
       
       allocatedData.push({
-        name: assoc.name,
-        members: assoc.members,
+        ...assoc,
         share: share,
         baseHours: 0,
         propHours: hours,
@@ -703,14 +1043,13 @@ function updateAllocation() {
     const requiredBaseHours = totalClubs * baseVal;
     
     if (requiredBaseHours > totalHoursAvailable) {
-      // Base hours exceed total available. Scale down base hours and give 0 proportional.
+      // Base hours exceed total available hours: Scale down base hours and set proportional to 0
       const scaledBase = baseVal * (totalHoursAvailable / requiredBaseHours);
       
       appState.associations.forEach(assoc => {
         allocatedData.push({
-          name: assoc.name,
-          members: assoc.members,
-          share: totalMembers > 0 ? (assoc.members / totalMembers) : 0,
+          ...assoc,
+          share: totalPoints > 0 ? (assoc.points / totalPoints) : 0,
           baseHours: scaledBase,
           propHours: 0,
           totalHours: scaledBase
@@ -724,13 +1063,12 @@ function updateAllocation() {
       const remainingHours = totalHoursAvailable - requiredBaseHours;
       
       appState.associations.forEach(assoc => {
-        const share = totalMembers > 0 ? (assoc.members / totalMembers) : 0;
+        const share = totalPoints > 0 ? (assoc.points / totalPoints) : 0;
         const propPart = remainingHours * share;
         const total = baseVal + propPart;
         
         allocatedData.push({
-          name: assoc.name,
-          members: assoc.members,
+          ...assoc,
           share: share,
           baseHours: baseVal,
           propHours: propPart,
@@ -742,42 +1080,38 @@ function updateAllocation() {
   } 
   
   // ----------------------------------------------------
-  // Model C: Medlemskategorier (Tiered / Brackets)
+  // Model C: Medlemskategorier (Tiered / Brackets by Points)
   // ----------------------------------------------------
   else if (algo === 'tiered') {
     let rawTierAllocations = [];
     let sumAssigned = 0;
     
     appState.associations.forEach(assoc => {
-      // Find matching bracket
       let assignedHours = 0;
       for (let i = 0; i < appState.tiers.length; i++) {
         const tier = appState.tiers[i];
         const prevLimit = i === 0 ? 0 : appState.tiers[i-1].limit;
-        if (assoc.members > prevLimit && assoc.members <= tier.limit) {
+        if (assoc.points > prevLimit && assoc.points <= tier.limit) {
           assignedHours = tier.hours;
           break;
         }
       }
       
       rawTierAllocations.push({
-        name: assoc.name,
-        members: assoc.members,
-        share: totalMembers > 0 ? (assoc.members / totalMembers) : 0,
+        ...assoc,
+        share: totalPoints > 0 ? (assoc.points / totalPoints) : 0,
         tierHours: assignedHours
       });
       sumAssigned += assignedHours;
     });
     
     if (sumAssigned > totalHoursAvailable) {
-      // Tiers exceed available hours: Scale down proportionally
+      // Bracket hours exceed available: Scale down proportionally
       const scale = totalHoursAvailable / sumAssigned;
       rawTierAllocations.forEach(item => {
         const scaledHours = item.tierHours * scale;
         allocatedData.push({
-          name: item.name,
-          members: item.members,
-          share: item.share,
+          ...item,
           baseHours: 0,
           propHours: 0,
           totalHours: scaledHours
@@ -785,12 +1119,10 @@ function updateAllocation() {
       });
       totalAllocatedHours = totalHoursAvailable;
     } else {
-      // Assign exact tier hours, leave the rest unallocated
+      // Assign exact hours, keep the rest as unallocated buffer
       rawTierAllocations.forEach(item => {
         allocatedData.push({
-          name: item.name,
-          members: item.members,
-          share: item.share,
+          ...item,
           baseHours: 0,
           propHours: 0,
           totalHours: item.tierHours
@@ -800,15 +1132,14 @@ function updateAllocation() {
     }
   }
   
-  // Save to global state for filters
   appState.lastAllocatedData = allocatedData;
   
-  // Render views
+  // Render Views
   renderTable(allocatedData);
   renderCharts(allocatedData, totalHoursAvailable);
   renderUtilization(totalAllocatedHours, totalHoursAvailable);
   
-  // Leftover unallocated hours badge toggle
+  // Remaining buffer badge toggle
   const leftover = totalHoursAvailable - totalAllocatedHours;
   const unallocatedAlert = document.getElementById('unallocated-hours-alert');
   if (leftover > 0.05 && appState.activeAlgo === 'tiered') {
@@ -839,7 +1170,7 @@ function hideBaseHoursWarning() {
 }
 
 // ==========================================================================
-// Views Render Logic (Table, Chart, Utilization)
+// Views Render Logic
 // ==========================================================================
 function renderTable(allocatedData) {
   const tableBody = document.getElementById('allocation-table-body');
@@ -860,14 +1191,14 @@ function renderTable(allocatedData) {
   tableBody.innerHTML = '';
   
   if (allocatedData.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="6" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga föreningar inlagda</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="11" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga föreningar inlagda</td></tr>`;
     return;
   }
   
   const filtered = allocatedData.filter(item => item.name.toLowerCase().includes(searchVal));
   
   if (filtered.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="6" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga matchande föreningar hittades</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="11" class="text-center" style="text-align: center; padding: 2rem; color: var(--text-muted);">Inga matchande föreningar hittades</td></tr>`;
     return;
   }
   
@@ -880,8 +1211,13 @@ function renderTable(allocatedData) {
     
     row.innerHTML = `
       <td style="font-weight: 600;">${item.name}</td>
-      <td class="text-right">${item.members.toLocaleString('sv-SE')}</td>
-      <td class="text-right">${sharePct}</td>
+      <td style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.activities}">${item.activities}</td>
+      <td class="text-right">${(item.girls || 0).toLocaleString('sv-SE')}</td>
+      <td class="text-right">${(item.boys || 0).toLocaleString('sv-SE')}</td>
+      <td class="text-right">${(item.girlsDisability || 0).toLocaleString('sv-SE')}</td>
+      <td class="text-right">${(item.boysDisability || 0).toLocaleString('sv-SE')}</td>
+      <td class="text-right" style="font-weight: 500;">${item.participants.toLocaleString('sv-SE')}</td>
+      <td class="text-right" style="font-weight: 600; color: #cbd5e1;">${parseFloat(item.points.toFixed(1)).toLocaleString('sv-SE')}</td>
       ${baseHoursCell}
       ${propHoursCell}
       <td class="text-right" style="font-weight: 700; color: var(--brand-gold);">${item.totalHours.toFixed(1)}h</td>
@@ -894,15 +1230,12 @@ function renderCharts(allocatedData, totalHours) {
   const barCanvas = document.getElementById('hours-bar-chart');
   const scatterCanvas = document.getElementById('ratio-scatter-chart');
   
-  // Destroy existing instances to avoid rendering overlap bugs
   if (barChartInstance) barChartInstance.destroy();
   if (scatterChartInstance) scatterChartInstance.destroy();
   
   if (allocatedData.length === 0) return;
   
-  // ----------------------------------------------------
-  // Chart 1: Horizontal Bar Chart of Allocated Hours (Top 12)
-  // ----------------------------------------------------
+  // 1. Prepare Bar Chart Data (Top 12)
   const sortedByHours = [...allocatedData].sort((a, b) => b.totalHours - a.totalHours);
   const top12 = sortedByHours.slice(0, 12);
   const others = sortedByHours.slice(12);
@@ -916,7 +1249,6 @@ function renderCharts(allocatedData, totalHours) {
     barValues.push(parseFloat(othersSum.toFixed(1)));
   }
   
-  // Set Chart.js palette style
   Chart.defaults.color = '#8a99ad';
   Chart.defaults.font.family = "'Inter', sans-serif";
   Chart.defaults.font.size = 11;
@@ -928,11 +1260,11 @@ function renderCharts(allocatedData, totalHours) {
       datasets: [{
         label: 'Timmar/vecka',
         data: barValues,
-        backgroundColor: 'rgba(15, 76, 129, 0.75)', // Swedish Blue
+        backgroundColor: 'rgba(15, 76, 129, 0.75)',
         borderColor: '#3b82f6',
         borderWidth: 1.5,
         borderRadius: 4,
-        hoverBackgroundColor: 'rgba(245, 166, 35, 0.85)', // Swedish Gold
+        hoverBackgroundColor: 'rgba(245, 166, 35, 0.85)',
         hoverBorderColor: '#f5a623'
       }]
     },
@@ -962,11 +1294,9 @@ function renderCharts(allocatedData, totalHours) {
     }
   });
   
-  // ----------------------------------------------------
-  // Chart 2: Scatter plot of Member count (X) vs. Allocated hours (Y)
-  // ----------------------------------------------------
+  // 2. Prepare Scatter Plot of Points (X) vs. Allocated Hours (Y)
   const scatterPoints = allocatedData.map(item => ({
-    x: item.members,
+    x: item.points,
     y: parseFloat(item.totalHours.toFixed(1)),
     name: item.name
   }));
@@ -977,7 +1307,7 @@ function renderCharts(allocatedData, totalHours) {
       datasets: [{
         label: 'Föreningar',
         data: scatterPoints,
-        backgroundColor: 'rgba(16, 185, 129, 0.7)', // Sports Field Green
+        backgroundColor: 'rgba(16, 185, 129, 0.7)',
         borderColor: '#10b981',
         borderWidth: 1.5,
         pointRadius: 6,
@@ -1000,7 +1330,7 @@ function renderCharts(allocatedData, totalHours) {
           callbacks: {
             label: function(context) {
               const pt = context.raw;
-              return `${pt.name}: ${pt.x.toLocaleString()} medlemmar, ${pt.y}h/vecka`;
+              return `${pt.name}: ${pt.x.toLocaleString('sv-SE')} poäng, ${pt.y}h/vecka`;
             }
           }
         }
@@ -1008,7 +1338,7 @@ function renderCharts(allocatedData, totalHours) {
       scales: {
         x: {
           grid: { color: 'rgba(255,255,255,0.05)' },
-          title: { display: true, text: 'Medlemsstorlek (antal)' }
+          title: { display: true, text: 'Poängsumma (antal)' }
         },
         y: {
           grid: { color: 'rgba(255,255,255,0.05)' },
@@ -1020,26 +1350,53 @@ function renderCharts(allocatedData, totalHours) {
 }
 
 function renderUtilization(allocatedHours, totalHoursAvailable) {
-  const percent = totalHoursAvailable > 0 ? Math.min(100, (allocatedHours / totalHoursAvailable) * 100) : 0;
+  const overallPercent = totalHoursAvailable > 0 ? (allocatedHours / totalHoursAvailable) * 100 : 0;
   
-  // Update overall progress meter
-  const progressRing = document.getElementById('utilization-progress');
-  const percentageText = document.getElementById('utilization-percentage');
-  const allocatedText = document.getElementById('util-allocated-hours');
-  const freeText = document.getElementById('util-free-hours');
+  // Update overall progress ring
+  const updateRing = (ringId, textId, allocated, total) => {
+    const ring = document.getElementById(ringId);
+    const textEl = document.getElementById(textId);
+    if (!ring || !textEl) return;
+    
+    const percent = total > 0 ? Math.min(100, (allocated / total) * 100) : 0;
+    textEl.textContent = `${Math.round(percent)}%`;
+    
+    const circ = 314.16; // 2 * PI * r = 2 * 3.1416 * 50
+    const offset = circ - (percent / 100) * circ;
+    ring.style.strokeDashoffset = offset;
+  };
   
-  percentageText.textContent = `${Math.round(percent)}%`;
-  allocatedText.textContent = `${allocatedHours.toFixed(1)}h`;
+  // 1. Overall Ring (Circumference = 314.16 since r=50 in svg)
+  updateRing('utilization-progress', 'utilization-percentage', allocatedHours, totalHoursAvailable);
+  document.getElementById('util-allocated-hours').textContent = `${allocatedHours.toFixed(1)}h`;
+  document.getElementById('util-total-hours').textContent = `${totalHoursAvailable.toFixed(0)}h`;
   
-  const leftover = Math.max(0, totalHoursAvailable - allocatedHours);
-  freeText.textContent = `${leftover.toFixed(1)}h`;
+  // Calculate size breakdowns
+  const getCapacity = (size) => appState.halls.filter(h => h.active && h.size === size).reduce((sum, h) => sum + h.hours, 0);
   
-  // Dash offset logic (r=70 => circumference = 439.82)
-  const circ = 439.82;
-  const dashOffset = circ - (percent / 100) * circ;
-  progressRing.style.strokeDashoffset = dashOffset;
+  const capLiten = getCapacity('liten');
+  const capStor = getCapacity('stor');
+  const capStorst = getCapacity('storst');
   
-  // Render list of individual hall load shares (pro-rata assumption for pool representation)
+  // Allocate pro-rata from shared pool
+  const allocLiten = totalHoursAvailable > 0 ? (allocatedHours * (capLiten / totalHoursAvailable)) : 0;
+  const allocStor = totalHoursAvailable > 0 ? (allocatedHours * (capStor / totalHoursAvailable)) : 0;
+  const allocStorst = totalHoursAvailable > 0 ? (allocatedHours * (capStorst / totalHoursAvailable)) : 0;
+  
+  // 2. Triple Small Rings
+  updateRing('utilization-progress-storst', 'util-percentage-storst', allocStorst, capStorst);
+  document.getElementById('util-allocated-storst').textContent = `${allocStorst.toFixed(1)}h`;
+  document.getElementById('util-total-storst').textContent = `${capStorst.toFixed(0)}h`;
+  
+  updateRing('utilization-progress-stor', 'util-percentage-stor', allocStor, capStor);
+  document.getElementById('util-allocated-stor').textContent = `${allocStor.toFixed(1)}h`;
+  document.getElementById('util-total-stor').textContent = `${capStor.toFixed(0)}h`;
+  
+  updateRing('utilization-progress-liten', 'util-percentage-liten', allocLiten, capLiten);
+  document.getElementById('util-allocated-liten').textContent = `${allocLiten.toFixed(1)}h`;
+  document.getElementById('util-total-liten').textContent = `${capLiten.toFixed(0)}h`;
+  
+  // 3. Render List of individual sporthall load shares
   const listContainer = document.getElementById('halls-util-list');
   listContainer.innerHTML = '';
   
@@ -1050,19 +1407,23 @@ function renderUtilization(allocatedHours, totalHoursAvailable) {
     return;
   }
   
+  // Sort halls by size descending (storst, stor, liten)
+  const sizeWeight = { storst: 3, stor: 2, liten: 1 };
+  activeHalls.sort((a, b) => sizeWeight[b.size] - sizeWeight[a.size]);
+  
   activeHalls.forEach(hall => {
-    // Pro-rata estimation of how many hours are loaded on this hall
-    const estLoadedHours = totalHoursAvailable > 0 ? (allocatedHours * (hall.hours / totalHoursAvailable)) : 0;
+    const estLoaded = totalHoursAvailable > 0 ? (allocatedHours * (hall.hours / totalHoursAvailable)) : 0;
+    const hallPercent = hall.hours > 0 ? Math.min(100, (estLoaded / hall.hours) * 100) : 0;
     
     const itemDiv = document.createElement('div');
     itemDiv.className = 'util-list-item';
     itemDiv.innerHTML = `
       <div class="util-item-header">
-        <span>${hall.name}</span>
-        <span>${estLoadedHours.toFixed(1)}h / ${hall.hours.toFixed(1)}h (${Math.round(percent)}%)</span>
+        <span>${hall.name} <span class="size-badge size-${hall.size}" style="margin-left: 0.5rem; transform: scale(0.85);">${hall.size}</span></span>
+        <span>${estLoaded.toFixed(1)}h / ${hall.hours.toFixed(1)}h (${Math.round(hallPercent)}%)</span>
       </div>
       <div class="util-item-bar-track">
-        <div class="util-item-bar-fill" style="width: ${percent}%"></div>
+        <div class="util-item-bar-fill" style="width: ${hallPercent}%"></div>
       </div>
     `;
     listContainer.appendChild(itemDiv);
@@ -1070,60 +1431,65 @@ function renderUtilization(allocatedHours, totalHoursAvailable) {
 }
 
 // ==========================================================================
-// Excel/CSV Exports
+// Excel Export Logic (Two Sheets workbook)
 // ==========================================================================
-function exportCSV(allocatedData) {
+function exportExcel(allocatedData) {
   if (allocatedData.length === 0) return;
   
-  let csvLines = [];
+  // 1. Create a new workbook
+  const wb = XLSX.utils.book_new();
   
-  // Headers (local format matches Swedish regional Excel defaults)
-  let headers = ['Förening', 'Antal medlemmar', 'Medlemsandel (%)', 'Garanterade bastimmar (h)', 'Proportionell tid (h)', 'Totalt tilldelad tid (h/vecka)'];
-  if (appState.activeAlgo !== 'base-proportional') {
-    headers = ['Förening', 'Antal medlemmar', 'Medlemsandel (%)', 'Totalt tilldelad tid (h/vecka)'];
-  }
-  csvLines.push(headers.join(';'));
+  // ----------------------------------------------------
+  // Flik 1: Hallfördelning (Detailed allocation results)
+  // ----------------------------------------------------
+  const headers = [
+    'Förening', 
+    'Aktiviteter', 
+    'Flickor (antal)', 
+    'Pojkar (antal)', 
+    'Flickor funktionsnedsättning (antal)', 
+    'Pojkar funktionsnedsättning (antal)', 
+    'Totalt antal deltagare', 
+    'Poäng (deltagare * multiplier)', 
+    'Andel poäng (%)', 
+    'Tilldelad tid (h/vecka)'
+  ];
   
-  allocatedData.forEach(item => {
-    let line = [
-      `"${item.name.replace(/"/g, '""')}"`,
-      item.members,
-      (item.share * 100).toFixed(2).replace('.', ','),
-      item.totalHours.toFixed(2).replace('.', ',')
-    ];
-    
-    if (appState.activeAlgo === 'base-proportional') {
-      line = [
-        `"${item.name.replace(/"/g, '""')}"`,
-        item.members,
-        (item.share * 100).toFixed(2).replace('.', ','),
-        item.baseHours.toFixed(2).replace('.', ','),
-        item.propHours.toFixed(2).replace('.', ','),
-        item.totalHours.toFixed(2).replace('.', ',')
-      ];
-    }
-    
-    csvLines.push(line.join(';'));
-  });
+  const sumPoints = allocatedData.reduce((sum, item) => sum + item.points, 0);
   
-  // UTF-8 Byte Order Mark (BOM) for proper Swedish characters (å, ä, ö) in MS Excel
-  const bom = "\uFEFF";
-  const csvBlob = new Blob([bom + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const rows = allocatedData.map(item => [
+    item.name,
+    item.activities || 'N/A',
+    item.girls || 0,
+    item.boys || 0,
+    item.girlsDisability || 0,
+    item.boysDisability || 0,
+    item.participants || 0,
+    parseFloat(item.points.toFixed(1)),
+    parseFloat(((sumPoints > 0 ? (item.points / sumPoints) : 0) * 100).toFixed(2)),
+    parseFloat(item.totalHours.toFixed(1))
+  ]);
   
-  const filename = `hallfordelning_${appState.activeAlgo}_${Date.now()}.csv`;
+  const sheet1Data = [headers, ...rows];
+  const wsAlloc = XLSX.utils.aoa_to_sheet(sheet1Data);
+  XLSX.utils.book_append_sheet(wb, wsAlloc, 'Hallfördelning');
   
-  if (navigator.msSaveBlob) { // IE 10+
-    navigator.msSaveBlob(csvBlob, filename);
-  } else {
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(csvBlob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  }
+  // ----------------------------------------------------
+  // Flik 2: Sporthallar (Active halls list)
+  // ----------------------------------------------------
+  const hallHeaders = ['Sporthall', 'Storleksklass', 'Tillgängliga bokningstimmar/vecka', 'Status'];
+  const hallRows = appState.halls.map(h => [
+    h.name,
+    h.size.toUpperCase(),
+    h.hours,
+    h.active ? 'Aktiv' : 'Inaktiv'
+  ]);
+  
+  const sheet2Data = [hallHeaders, ...hallRows];
+  const wsHalls = XLSX.utils.aoa_to_sheet(sheet2Data);
+  XLSX.utils.book_append_sheet(wb, wsHalls, 'Sporthallar');
+  
+  // 5. Download workbook
+  const filename = `hallfordelning_uppsala_${appState.activeAlgo}_${Date.now()}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }

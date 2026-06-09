@@ -35,9 +35,9 @@
           <i data-lucide="sparkles"></i>
           <span>Generera Testdata</span>
         </button>
-        <button id="export-csv-btn" class="btn btn-secondary" disabled>
+        <button id="export-xlsx-btn" class="btn btn-secondary" disabled>
           <i data-lucide="download"></i>
-          <span>Exportera CSV</span>
+          <span>Exportera Excel (.xlsx)</span>
         </button>
         <button id="print-pdf-btn" class="btn btn-primary" disabled>
           <i data-lucide="printer"></i>
@@ -62,8 +62,17 @@
           <i data-lucide="user-check"></i>
         </div>
         <div class="metric-content">
-          <span class="metric-label">Totalt Antal Medlemmar</span>
+          <span class="metric-label">Totalt Antal Deltagare</span>
           <span id="metric-total-members" class="metric-value">0</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon purple">
+          <i data-lucide="award"></i>
+        </div>
+        <div class="metric-content">
+          <span class="metric-label">Totalt Beräknade Poäng</span>
+          <span id="metric-total-points" class="metric-value">0</span>
         </div>
       </div>
       <div class="metric-card">
@@ -73,15 +82,7 @@
         <div class="metric-content">
           <span class="metric-label">Tillgängliga Halltimmar / vecka</span>
           <span id="metric-total-hours" class="metric-value">0</span>
-        </div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-icon purple">
-          <i data-lucide="percent"></i>
-        </div>
-        <div class="metric-content">
-          <span class="metric-label">Fördelningsgrad (Timmar/Medlem)</span>
-          <span id="metric-allocation-rate" class="metric-value">0.000</span>
+          <span id="metric-hours-breakdown" class="metric-sub-label">Liten: 0h | Stor: 0h | Störst: 0h</span>
         </div>
       </div>
     </section>
@@ -98,13 +99,19 @@
           </div>
           <div class="card-body">
             <p class="section-desc">Aktivera/inaktivera sporthallar och anpassa deras tillgängliga bokningstimmar per vecka.</p>
+            
             <div id="halls-list-container" class="halls-list">
-              <!-- Dynamically populated via JS -->
+              <!-- Dynamically populated and grouped by size via JS -->
             </div>
             
             <div class="add-hall-form">
-              <input type="text" id="new-hall-name" placeholder="Ny hall (t.ex. Gottsunda B)" class="form-input">
+              <input type="text" id="new-hall-name" placeholder="Ny hall" class="form-input">
               <input type="number" id="new-hall-hours" placeholder="Timmar" class="form-input hour-input" min="1" max="168">
+              <select id="new-hall-size" class="form-select size-select" style="width: 90px;">
+                <option value="liten">Liten</option>
+                <option value="stor" selected>Stor</option>
+                <option value="storst">Störst</option>
+              </select>
               <button id="add-hall-btn" class="btn btn-icon btn-secondary" title="Lägg till hall">
                 <i data-lucide="plus"></i>
               </button>
@@ -125,7 +132,7 @@
                 <span class="radio-custom"></span>
                 <span class="algo-info">
                   <span class="algo-name">Rent proportionell</span>
-                  <span class="algo-desc">Timmar fördelas linjärt utifrån föreningens medlemsandel.</span>
+                  <span class="algo-desc">Timmar fördelas linjärt utifrån föreningens poängandel.</span>
                 </span>
               </label>
 
@@ -152,13 +159,13 @@
                 <span class="radio-custom"></span>
                 <span class="algo-info">
                   <span class="algo-name">Medlemskategorier (Nivåer)</span>
-                  <span class="algo-desc">Timmar tilldelas stegvis baserat på fasta medlemsspann.</span>
+                  <span class="algo-desc">Timmar tilldelas stegvis baserat på poängnivåer.</span>
                 </span>
               </label>
               
               <!-- Conditional config for Tiered -->
               <div id="tiered-config-panel" class="algo-subpanel hidden">
-                <span class="subpanel-label">Kategoridefinitioner:</span>
+                <span class="subpanel-label">Kategoridefinitioner (Poängspann):</span>
                 <div id="tiers-list-container" class="tiers-list">
                   <!-- Dynamically populated via JS -->
                 </div>
@@ -173,16 +180,38 @@
 
       <!-- Right Column: Workspace, Mapping & Results -->
       <section class="main-col">
-        <!-- File Dropzone -->
-        <div id="dropzone" class="dropzone">
-          <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden-file-input">
-          <div class="dropzone-content">
-            <i data-lucide="upload-cloud" class="dropzone-icon"></i>
-            <h3>Dra och släpp medlemslista</h3>
-            <p>Stöder Excel (.xlsx, .xls) och CSV-filer</p>
-            <span class="btn btn-secondary select-file-btn">Välj fil från datorn</span>
+        <!-- Persistent Data Sources & File Upload Section -->
+        <section class="card files-section">
+          <div class="card-header">
+            <i data-lucide="file-spreadsheet"></i>
+            <h2>Datakällor (Excel / CSV)</h2>
           </div>
-        </div>
+          <div class="card-body file-layout-grid">
+            <div id="dropzone" class="dropzone mini-dropzone">
+              <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden-file-input">
+              <div class="dropzone-content">
+                <i data-lucide="upload-cloud" class="dropzone-icon"></i>
+                <h3>Dra hit deltagarlistor eller sporthallslista</h3>
+                <span class="btn btn-secondary btn-sm select-file-btn">Välj fil</span>
+              </div>
+            </div>
+
+            <div class="active-files-column">
+              <h4>Uppladdade deltagarfiler:</h4>
+              <div id="data-sources-list" class="data-sources-list">
+                <div class="empty-list-text">Inga filer uppladdade. Använd dropzone till vänster för att lägga till deltagarlistor.</div>
+              </div>
+              
+              <div id="halls-file-indicator" class="halls-file-banner hidden">
+                <div class="banner-info">
+                  <i data-lucide="map-pin"></i>
+                  <span>Importerad hall-lista: <strong id="halls-file-name">hallar.xlsx</strong></span>
+                </div>
+                <button id="reset-halls-btn" class="btn btn-secondary btn-sm">Återställ standardhallar</button>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- Column Mapper Panel (Hidden initially) -->
         <div id="mapper-panel" class="card mapper-card hidden">
@@ -191,49 +220,57 @@
             <h2>Kolumnmappning</h2>
           </div>
           <div class="card-body">
-            <p class="section-desc">Vi hittade flera kolumner i din fil. Vänligen välj hur data ska tolkas:</p>
+            <p class="section-desc" id="mapper-filename-desc">Vi hittade flera kolumner i filen. Vänligen välj hur data ska tolkas:</p>
             
             <div class="mapper-format-toggle">
               <label class="toggle-option">
-                <input type="radio" name="data-format" value="raw-list" checked>
+                <input type="radio" name="data-format" value="detailed-list" checked>
                 <span class="radio-custom"></span>
-                <span><strong>A: Medlemslista</strong> (Varje rad representerar en medlem)</span>
+                <span><strong>A: Detaljerad deltagarlista</strong> (Innehåller förening, aktivitet, flickor, pojkar, funk-antal osv.)</span>
               </label>
               <label class="toggle-option">
                 <input type="radio" name="data-format" value="summary-list">
                 <span class="radio-custom"></span>
-                <span><strong>B: Föreningssammanställning</strong> (Varje rad innehåller föreningens totala medlemsantal)</span>
+                <span><strong>B: Enkel medlemslista</strong> (Enbart förening + totalt medlemsantal per rad)</span>
               </label>
             </div>
 
-            <div class="mapper-selectors">
+            <div class="mapper-selectors detailed-mapper-grid">
               <div class="control-group">
-                <label for="map-club-col" class="form-label">Kolumn för Föreningsnamn:</label>
+                <label for="map-club-col" class="form-label">Förening / Klubb (Krävs):</label>
                 <select id="map-club-col" class="form-select"></select>
               </div>
-              <div id="mapper-member-count-group" class="control-group hidden">
-                <label for="map-members-col" class="form-label">Kolumn för Medlemsantal:</label>
-                <select id="map-members-col" class="form-select"></select>
+              <div class="control-group map-detailed-only">
+                <label for="map-activity-col" class="form-label">Aktivitet / Idrott (Valfri):</label>
+                <select id="map-activity-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-detailed-only">
+                <label for="map-girls-col" class="form-label">Antal unika flickor:</label>
+                <select id="map-girls-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-detailed-only">
+                <label for="map-boys-col" class="form-label">Antal unika pojkar:</label>
+                <select id="map-boys-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-detailed-only">
+                <label for="map-girls-dis-col" class="form-label">Flickor funktionsnedsättning:</label>
+                <select id="map-girls-dis-col" class="form-select"></select>
+              </div>
+              <div class="control-group map-detailed-only">
+                <label for="map-boys-dis-col" class="form-label">Pojkar funktionsnedsättning:</label>
+                <select id="map-boys-dis-col" class="form-select"></select>
+              </div>
+              <div class="control-group">
+                <label for="map-total-col" class="form-label" id="map-total-label">Totalt antal deltagare:</label>
+                <select id="map-total-col" class="form-select"></select>
               </div>
             </div>
 
             <div class="mapper-actions">
               <button id="cancel-mapping-btn" class="btn btn-secondary">Avbryt</button>
-              <button id="apply-mapping-btn" class="btn btn-primary">Fördela timmar</button>
+              <button id="apply-mapping-btn" class="btn btn-primary">Importera fil</button>
             </div>
           </div>
-        </div>
-
-        <!-- Active File Alert / Indicator -->
-        <div id="active-file-indicator" class="active-file-indicator hidden">
-          <div class="file-info">
-            <i data-lucide="file-spreadsheet"></i>
-            <span id="active-file-name" class="file-name">medlemslista.xlsx</span>
-            <span id="active-file-size" class="file-size">(14.2 KB)</span>
-          </div>
-          <button id="remove-file-btn" class="btn btn-icon btn-danger-link" title="Ta bort fil och återställ">
-            <i data-lucide="x"></i>
-          </button>
         </div>
 
         <!-- Results & Analysis Tabs Container -->
@@ -250,7 +287,7 @@
             </button>
             <button class="tab-btn" data-tab="tab-utilization">
               <i data-lucide="pie-chart"></i>
-              <span>Hallutnyttjande</span>
+              <span>Hallutnyttjande & Beläggning</span>
             </button>
           </nav>
 
@@ -271,8 +308,13 @@
                 <thead>
                   <tr>
                     <th>Förening</th>
-                    <th class="text-right">Medlemsantal</th>
-                    <th class="text-right">Andel Medlemmar</th>
+                    <th>Aktiviteter</th>
+                    <th class="text-right">Flickor</th>
+                    <th class="text-right">Pojkar</th>
+                    <th class="text-right">Flickor (funk)</th>
+                    <th class="text-right">Pojkar (funk)</th>
+                    <th class="text-right">Totalt Deltagare</th>
+                    <th class="text-right">Beräknade Poäng</th>
                     <th class="text-right table-col-base hidden">Bas-timmar</th>
                     <th class="text-right table-col-prop hidden">Prop. timmar</th>
                     <th class="text-right">Tilldelad tid (h/vecka)</th>
@@ -295,7 +337,7 @@
                 </div>
               </div>
               <div class="chart-container-card">
-                <h3>Medlemsstorlek vs Bokade timmar</h3>
+                <h3>Totalt Beräknade Poäng vs Bokade timmar</h3>
                 <div class="canvas-wrapper">
                   <canvas id="ratio-scatter-chart"></canvas>
                 </div>
@@ -306,36 +348,89 @@
           <!-- Tab Content: Utilization -->
           <div id="tab-utilization" class="tab-content">
             <div class="utilization-grid">
-              <div class="util-card">
+              <div class="util-card large-util-card">
                 <h3>Hallbeläggningsstatistik</h3>
-                <p class="section-desc">Hur stor andel av de tillgängliga timmarna som tilldelas föreningar totalt.</p>
-                <div class="total-utilization-meter">
-                  <div class="meter-circle">
-                    <svg class="progress-ring" width="160" height="160">
-                      <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="12" fill="transparent" r="70" cx="80" cy="80"/>
-                      <circle id="utilization-progress" class="progress-ring__circle" stroke="#10b981" stroke-width="12" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round" fill="transparent" r="70" cx="80" cy="80"/>
-                    </svg>
-                    <div class="meter-text">
-                      <span id="utilization-percentage" class="meter-number">0%</span>
-                      <span class="meter-label">Allokerat</span>
+                <p class="section-desc">Hur stor andel av de tillgängliga timmarna som tilldelas föreningar totalt samt per hallstorlek.</p>
+                
+                <div class="triple-meters-row">
+                  <!-- Total Utilization -->
+                  <div class="meter-group">
+                    <div class="meter-circle">
+                      <svg class="progress-ring" width="120" height="120">
+                        <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="50" cx="60" cy="60"/>
+                        <circle id="utilization-progress" class="progress-ring__circle" stroke="#10b981" stroke-width="8" stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+                      </svg>
+                      <div class="meter-text mini-meter-text">
+                        <span id="utilization-percentage" class="meter-number mini">0%</span>
+                        <span class="meter-label mini">Totalt</span>
+                      </div>
+                    </div>
+                    <div class="meter-desc">
+                      <span>Totalt: <strong id="util-allocated-hours">0h</strong> / <span id="util-total-hours">0h</span></span>
                     </div>
                   </div>
-                  <div class="meter-legend">
-                    <div class="legend-item">
-                      <span class="legend-dot green"></span>
-                      <span>Tilldelade timmar: <strong id="util-allocated-hours">0h</strong></span>
+                  
+                  <!-- Störst Halls Utilization -->
+                  <div class="meter-group">
+                    <div class="meter-circle">
+                      <svg class="progress-ring" width="120" height="120">
+                        <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="50" cx="60" cy="60"/>
+                        <circle id="utilization-progress-storst" class="progress-ring__circle" stroke="#f5a623" stroke-width="8" stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+                      </svg>
+                      <div class="meter-text mini-meter-text">
+                        <span id="util-percentage-storst" class="meter-number mini">0%</span>
+                        <span class="meter-label mini">Störst</span>
+                      </div>
                     </div>
-                    <div class="legend-item">
-                      <span class="legend-dot gray"></span>
-                      <span>Lediga/Buffert timmar: <strong id="util-free-hours">0h</strong></span>
+                    <div class="meter-desc">
+                      <span>Störst: <strong id="util-allocated-storst">0h</strong> / <span id="util-total-storst">0h</span></span>
                     </div>
                   </div>
+                  
+                  <!-- Stor Halls Utilization -->
+                  <div class="meter-group">
+                    <div class="meter-circle">
+                      <svg class="progress-ring" width="120" height="120">
+                        <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="50" cx="60" cy="60"/>
+                        <circle id="utilization-progress-stor" class="progress-ring__circle" stroke="#8b5cf6" stroke-width="8" stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+                      </svg>
+                      <div class="meter-text mini-meter-text">
+                        <span id="util-percentage-stor" class="meter-number mini">0%</span>
+                        <span class="meter-label mini">Stor</span>
+                      </div>
+                    </div>
+                    <div class="meter-desc">
+                      <span>Stor: <strong id="util-allocated-stor">0h</strong> / <span id="util-total-stor">0h</span></span>
+                    </div>
+                  </div>
+
+                  <!-- Liten Halls Utilization -->
+                  <div class="meter-group">
+                    <div class="meter-circle">
+                      <svg class="progress-ring" width="120" height="120">
+                        <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="50" cx="60" cy="60"/>
+                        <circle id="utilization-progress-liten" class="progress-ring__circle" stroke="#3b82f6" stroke-width="8" stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+                      </svg>
+                      <div class="meter-text mini-meter-text">
+                        <span id="util-percentage-liten" class="meter-number mini">0%</span>
+                        <span class="meter-label mini">Liten</span>
+                      </div>
+                    </div>
+                    <div class="meter-desc">
+                      <span>Liten: <strong id="util-allocated-liten">0h</strong> / <span id="util-total-liten">0h</span></span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="meter-legend" style="margin-top: 1.5rem; justify-content: center; display: flex; gap: 2rem;">
+                  <div class="legend-item"><span class="legend-dot green"></span><span>Allokerade timmar</span></div>
+                  <div class="legend-item"><span class="legend-dot gray"></span><span>Buffert / Ledig kapacitet</span></div>
                 </div>
               </div>
               
               <div class="util-card list-card">
                 <h3>Sporthallarnas andel av allokering</h3>
-                <p class="section-desc">Lista över bidragande timmar från respektive sporthall.</p>
+                <p class="section-desc">Lista över bidragande timmar från respektive sporthall samt storleksklassificering.</p>
                 <div id="halls-util-list" class="halls-util-list">
                   <!-- Populated via JS -->
                 </div>
