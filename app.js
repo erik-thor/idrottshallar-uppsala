@@ -559,6 +559,14 @@ function getHallTypeForActivity(activity) {
   return 'sporthall';
 }
 
+function parseFloatSwedish(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return val;
+  const clean = String(val).replace(/[\s\xa0%]/g, '').replace(',', '.').trim();
+  const parsed = parseFloat(clean);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 function importHistoricalData() {
   const headers = currentFileData.headers;
   const rows = currentFileData.rows;
@@ -583,7 +591,7 @@ function importHistoricalData() {
   });
   
   if (clubIdx === -1 || utilIdx === -1) {
-    alert("Kunde inte läsa in utnyttjandedata. Filen saknar kolumn för Förening eller Utnyttjande.");
+    alert("Kunde inte läsa in utnyttjandedata. Filen saknar giltiga kolumner för Förening eller Utnyttjande.");
     return;
   }
   
@@ -593,25 +601,27 @@ function importHistoricalData() {
     if (!club) return;
     
     // Parse util percentage
-    let utilRaw = String(row[utilIdx] || '').replace('%', '').replace(',', '.').trim();
-    let utilVal = parseFloat(utilRaw);
-    if (isNaN(utilVal)) utilVal = 100;
-    if (utilVal > 0 && utilVal <= 1.0) utilVal = utilVal * 100; 
+    let utilVal = parseFloatSwedish(row[utilIdx]);
+    if (utilVal > 0 && utilVal <= 1.0) utilVal = utilVal * 100;
     
-    let rejectRaw = rejectIdx !== -1 ? String(row[rejectIdx] || '').replace('%', '').replace(',', '.').trim() : '0';
-    let rejectVal = parseFloat(rejectRaw);
-    if (isNaN(rejectVal)) rejectVal = 0;
+    // Check if the cell was actually empty
+    const isCellEmpty = row[utilIdx] === undefined || row[utilIdx] === null || String(row[utilIdx]).trim() === '';
+    if (isCellEmpty) {
+      utilVal = 100;
+    }
+    
+    let rejectVal = rejectIdx !== -1 ? parseFloatSwedish(row[rejectIdx]) : 0;
     if (rejectVal > 0 && rejectVal <= 1.0) rejectVal = rejectVal * 100;
     
-    let hoursWeek = hoursWeekIdx !== -1 ? parseFloat(String(row[hoursWeekIdx]).replace(',', '.')) : 0;
-    let booked = bookedIdx !== -1 ? parseFloat(String(row[bookedIdx]).replace(',', '.')) : 0;
+    let hoursWeek = hoursWeekIdx !== -1 ? parseFloatSwedish(row[hoursWeekIdx]) : 0;
+    let booked = bookedIdx !== -1 ? parseFloatSwedish(row[bookedIdx]) : 0;
     
     importedUsage[club.toLowerCase()] = {
       clubName: club,
       utilizationRate: utilVal,
       rejectionRate: rejectVal,
-      hoursPerWeek: isNaN(hoursWeek) ? 0 : hoursWeek,
-      bookedTime: isNaN(booked) ? 0 : booked
+      hoursPerWeek: hoursWeek,
+      bookedTime: booked
     };
   });
   
@@ -731,7 +741,7 @@ function importHallsData() {
     const name = String(row[nameColIdx] || '').trim();
     if (!name) return;
     
-    let hours = parseFloat(row[hoursColIdx]);
+    let hours = parseFloatSwedish(row[hoursColIdx]);
     if (isNaN(hours) || hours < 0) hours = 0;
     
     // Parse size category
