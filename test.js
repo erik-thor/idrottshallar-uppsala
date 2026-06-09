@@ -413,5 +413,150 @@ assert(basketAssocNew.points === 330, `Uppsala Basket points with new multiplier
 
 console.log("✅ fordelningsmall_v5 Age-Bracket Columns passed.");
 
-console.log("\n⭐ ALL PHASE 3 UNIT TESTS PASSED SUCCESSFULLY! ⭐");
+// ----------------------------------------------------
+// Test Case 8: Arena Pool Isolation (Phase 4)
+// ----------------------------------------------------
+console.log("Testing Arena Pool Isolation...");
+appState.files = []; // Reset
+appState.historicalUsage = {}; // Reset
+appState.excludedAssociations.clear(); // Reset
+
+// Setup halls: 1 of each type
+appState.halls = [
+  { id: 'h-sport', name: 'IFU Sporthall', hours: 40, size: 'stor', type: 'sporthall', active: true },
+  { id: 'h-foot', name: 'Lötens IP', hours: 60, size: 'storst', type: 'fotboll', active: true },
+  { id: 'h-ice', name: 'Gränby Ishall', hours: 30, size: 'stor', type: 'is', active: true },
+  { id: 'h-swim', name: 'Fyrishov Simbana', hours: 20, size: 'liten', type: 'simning', active: true }
+];
+
+// Setup associations that map to different types
+// Innebandy -> Sporthall
+// Fotboll -> Fotboll
+// Ishockey -> Is
+// Simning -> Simning
+appState.associations = [
+  { name: 'IK Sporthallare', activity: 'Innebandy', hallType: 'sporthall', participants: 100, points: 100, applied: true },
+  { name: 'IK Bollrullare', activity: 'Fotboll', hallType: 'fotboll', participants: 200, points: 200, applied: true },
+  { name: 'Uppsala Bandyklubb', activity: 'Ishockey', hallType: 'is', participants: 300, points: 300, applied: true },
+  { name: 'Uppsala Simmare', activity: 'Simning', hallType: 'simning', participants: 400, points: 400, applied: true }
+];
+
+appState.activeAlgo = 'pure-proportional';
+
+// Mock document for basic proportional (not used, but safe)
+global.document.getElementById = (id) => {
+  const el = createMockElement();
+  if (id === 'adjust-by-history-switch') el.checked = false;
+  return el;
+};
+
+updateAllocation();
+result = appState.lastAllocatedData;
+
+// Each club should get exactly the hours of its respective hall type pool because they are the sole club in that pool
+const resSport = result.find(i => i.name === 'IK Sporthallare');
+assert(resSport.totalHours === 40, `IK Sporthallare should get 40h, got ${resSport.totalHours}`);
+
+const resFoot = result.find(i => i.name === 'IK Bollrullare');
+assert(resFoot.totalHours === 60, `IK Bollrullare should get 60h, got ${resFoot.totalHours}`);
+
+const resIce = result.find(i => i.name === 'Uppsala Bandyklubb');
+assert(resIce.totalHours === 30, `Uppsala Bandyklubb should get 30h, got ${resIce.totalHours}`);
+
+const resSwim = result.find(i => i.name === 'Uppsala Simmare');
+assert(resSwim.totalHours === 20, `Uppsala Simmare should get 20h, got ${resSwim.totalHours}`);
+
+console.log("✅ Arena Pool Isolation passed.");
+
+// ----------------------------------------------------
+// Test Case 9: Historical Utilization Adjustments (Phase 4)
+// ----------------------------------------------------
+console.log("Testing Historical Utilization Adjustments...");
+appState.activeAlgo = 'pure-proportional';
+
+// Setup halls: all sporthalls (total hours = 330)
+appState.halls = [
+  { id: 'h-1', name: 'Rosendals', hours: 330, size: 'stor', type: 'sporthall', active: true }
+];
+
+// Setup associations: all in sporthall
+appState.associations = [
+  { name: 'Klubb A', activity: 'Innebandy', hallType: 'sporthall', participants: 100, points: 100, applied: true, historicalUsage: { utilizationRate: 80, bookedTime: 10 } },
+  { name: 'Klubb B', activity: 'Basket', hallType: 'sporthall', participants: 200, points: 200, applied: true, historicalUsage: { utilizationRate: 50, bookedTime: 20 } },
+  { name: 'Klubb C', activity: 'Volleyboll', hallType: 'sporthall', participants: 150, points: 150, applied: true }
+];
+
+// Setup historical utilization usage
+// Klubb A: 80% util
+// Klubb B: 50% util
+// Klubb C: not present => defaults to 100% util
+appState.historicalUsage = {
+  'klubb a': { utilizationRate: 80, bookedTime: 10 },
+  'klubb b': { utilizationRate: 50, bookedTime: 20 }
+};
+
+// Enable historical adjustments switch
+global.document.getElementById = (id) => {
+  const el = createMockElement();
+  if (id === 'adjust-by-history-switch') el.checked = true;
+  return el;
+};
+
+// Re-run allocation
+updateAllocation();
+result = appState.lastAllocatedData;
+
+// Adjusted points should be:
+// Klubb A: 100 * 0.8 = 80 points
+// Klubb B: 200 * 0.5 = 100 points
+// Klubb C: 150 * 1.0 = 150 points
+// Total adjusted points = 330. Total hours = 330. Rate = 1h/point.
+// Allocated hours: Klubb A = 80h, Klubb B = 100h, Klubb C = 150h.
+const allocA = result.find(i => i.name === 'Klubb A');
+assert(Math.abs(allocA.totalHours - 80) < 0.001, `Klubb A should get 80h, got ${allocA.totalHours}`);
+
+const allocB = result.find(i => i.name === 'Klubb B');
+assert(Math.abs(allocB.totalHours - 100) < 0.001, `Klubb B should get 100h, got ${allocB.totalHours}`);
+
+const allocC = result.find(i => i.name === 'Klubb C');
+assert(Math.abs(allocC.totalHours - 150) < 0.001, `Klubb C should get 150h, got ${allocC.totalHours}`);
+
+console.log("✅ Historical Utilization Adjustments passed.");
+
+// ----------------------------------------------------
+// Test Case 10: Non-Applying Organization Exclusions (Phase 4)
+// ----------------------------------------------------
+console.log("Testing Non-Applying Organization Exclusions...");
+
+// Exclude Klubb B
+appState.excludedAssociations.add('Klubb B||Basket');
+
+// Re-aggregate / re-evaluate active flag
+appState.associations.forEach(assoc => {
+  const key = `${assoc.name}||${assoc.activity}`;
+  assoc.applied = !appState.excludedAssociations.has(key);
+});
+
+// Re-run allocation
+updateAllocation();
+result = appState.lastAllocatedData;
+
+// Klubb B is excluded:
+// Total active points: Klubb A (80 adjusted points) + Klubb C (150 adjusted points) = 230 points.
+// Klubb B should get 0 hours.
+// Klubb A should get 330 * (80 / 230) = 114.7826h
+// Klubb C should get 330 * (150 / 230) = 215.2173h
+const allocB_ex = result.find(i => i.name === 'Klubb B');
+assert(allocB_ex.totalHours === 0, `Excluded Klubb B should get 0h, got ${allocB_ex.totalHours}`);
+
+const allocA_ex = result.find(i => i.name === 'Klubb A');
+assert(Math.abs(allocA_ex.totalHours - 114.7826) < 0.01, `Klubb A should get ~114.78h, got ${allocA_ex.totalHours}`);
+
+const allocC_ex = result.find(i => i.name === 'Klubb C');
+assert(Math.abs(allocC_ex.totalHours - 215.2173) < 0.01, `Klubb C should get ~215.22h, got ${allocC_ex.totalHours}`);
+
+console.log("✅ Non-Applying Organization Exclusions passed.");
+
+console.log("\n⭐ ALL PHASE 4 UNIT TESTS PASSED SUCCESSFULLY! ⭐");
+
 
